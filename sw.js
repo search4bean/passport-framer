@@ -1,5 +1,5 @@
 // Bump CACHE when you change any file below, or phones will keep serving the old copy.
-const CACHE = 'passport-framer-v1';
+const CACHE = 'passport-framer-v3';
 const SHELL = [
   './',
   './index.html',

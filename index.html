@@ -37,7 +37,7 @@
        color:var(--mute);font-family:var(--mono);font-size:11px;letter-spacing:.07em;
        text-transform:uppercase;border-radius:7px;cursor:pointer}
   .tab[aria-selected=true]{background:var(--amber);border-color:var(--amber);color:#241802;font-weight:600}
-  .tab:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .tab:focus-visible,button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
 
   .panel[hidden]{display:none}
   .card{background:var(--ink2);border:1px solid var(--rule);border-radius:10px;padding:16px;margin-bottom:14px}
@@ -47,7 +47,7 @@
   .primary{background:var(--amber);color:#241802}
   .ghost{background:transparent;border:1px solid var(--rule);color:var(--text)}
   button.act+button.act{margin-top:9px}
-  button:disabled{opacity:.4;cursor:default}
+  button:disabled{opacity:.45;cursor:default}
 
   /* ---- camera ---- */
   #camWrap{position:relative;width:100%;aspect-ratio:1;background:#000;
@@ -55,36 +55,72 @@
   #cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
   #camGuide{position:absolute;inset:0;width:100%;height:100%}
 
-  /* ---- measure stage ---- */
+  /* ---- stage ---- */
   #stage{position:relative;width:100%;touch-action:none;border-radius:10px;
-         overflow:hidden;background:#000;user-select:none}
-  #shot{display:block;width:100%}
-  .line{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--amber);pointer-events:none}
+         overflow:hidden;background:#000;user-select:none;cursor:default}
+  #shot{display:block;width:100%;height:auto}
+  .line{position:absolute;left:0;right:0;height:0;border-top:2px solid var(--amber);
+        pointer-events:none;opacity:.95}
   .line.v{top:0;bottom:0;left:0;width:0;height:auto;border-top:0;
-          border-left:2px dashed rgba(240,162,46,.55)}
-  .grab{position:absolute;height:44px;margin-top:-22px;left:0;right:0;cursor:grab;touch-action:none}
-  .grab.v{top:0;bottom:0;left:0;width:44px;margin:0 0 0 -22px;height:auto}
-  .tag{position:absolute;left:8px;top:50%;transform:translateY(-50%);
-       background:var(--amber);color:#241802;font-family:var(--mono);font-size:10px;
-       font-weight:700;letter-spacing:.08em;padding:3px 7px;border-radius:4px}
-  .grab.v .tag{left:50%;top:12px;transform:translateX(-50%)}
+          border-left:2px dashed rgba(240,162,46,.6)}
 
-  /* ---- caliper (signature) ---- */
-  .cal{display:flex;gap:14px;align-items:stretch;margin-top:14px}
-  .calBar{position:relative;width:52px;flex:none;border-left:1px solid var(--rule)}
+  /* draggable handles: a labelled tab on one side, a gripped knob on the other */
+  .grab{position:absolute;height:46px;margin-top:-23px;left:0;right:0;cursor:grab;touch-action:none}
+  .grab:active{cursor:grabbing}
+  .grab.v{top:0;bottom:0;left:0;width:46px;margin:0 0 0 -23px;height:auto}
+  .tag{position:absolute;left:6px;top:50%;transform:translateY(-50%);
+       background:var(--amber);color:#241802;font-family:var(--mono);font-size:10px;
+       font-weight:700;letter-spacing:.06em;padding:4px 7px;border-radius:4px;white-space:nowrap}
+  .knob{position:absolute;right:6px;top:50%;transform:translateY(-50%);
+        width:34px;height:26px;border-radius:13px;background:var(--amber);
+        box-shadow:0 1px 6px rgba(0,0,0,.5);display:flex;align-items:center;
+        justify-content:center;gap:3px}
+  .knob i{width:3px;height:11px;border-radius:2px;background:#241802;opacity:.75;display:block}
+  .grab.v .tag{left:50%;top:8px;transform:translateX(-50%)}
+  .grab.v .knob{left:50%;right:auto;top:auto;bottom:8px;transform:translateX(-50%);
+                width:26px;height:34px;flex-direction:column}
+  .grab.v .knob i{width:11px;height:3px}
+  .nudge .knob{animation:bob 1.6s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(-50%) scale(1)}50%{transform:translateY(-50%) scale(1.14)}}
+  .grab.v.nudge .knob{animation:bobv 1.6s ease-in-out infinite}
+  @keyframes bobv{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.14)}}
+
+  .steer{display:flex;align-items:center;gap:10px;font-family:var(--mono);
+         font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);
+         padding-top:14px;margin-top:14px;border-top:1px solid var(--rule)}
+  .steer input[type=range]{flex:1;accent-color:var(--amber);min-width:0}
+  .steer .val{width:52px;text-align:right;color:var(--text);text-transform:none}
+  .mini{background:transparent;border:1px solid var(--rule);color:var(--mute);
+        border-radius:6px;padding:5px 9px;font-family:var(--mono);font-size:10px;
+        letter-spacing:.06em;cursor:pointer;flex:none}
+
+  /* ---- caliper + readout + live preview ---- */
+  .cal{display:flex;gap:12px;align-items:stretch;margin-top:16px}
+  .calBar{position:relative;width:34px;flex:none;border-left:1px solid var(--rule)}
   .calFill{position:absolute;left:0;right:0;border-radius:2px;transition:background .2s}
   .calFill::before,.calFill::after{content:"";position:absolute;left:0;right:0;height:2px;background:currentColor}
   .calFill::before{top:0}.calFill::after{bottom:0}
   .calSpine{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:currentColor;opacity:.5}
-  .calRead{flex:1;display:flex;flex-direction:column;justify-content:center}
-  .big{font-family:var(--mono);font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1}
+  .calRead{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+  .big{font-family:var(--mono);font-size:34px;font-weight:600;letter-spacing:-.03em;line-height:1}
   .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-bottom:6px}
-  .verdict{margin-top:10px;font-size:14px;line-height:1.45}
-
+  .prev{flex:none;width:96px;text-align:center}
+  #liveCanvas{width:96px;height:96px;border-radius:6px;background:#0B1017;
+              border:1px solid var(--rule);display:block}
+  .prevCap{font-family:var(--mono);font-size:9px;letter-spacing:.06em;
+           text-transform:uppercase;color:var(--mute);margin-top:6px}
+  .verdict{margin-top:12px;font-size:14px;line-height:1.45}
   .spec{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
         color:var(--mute);padding-top:10px;margin-top:12px;border-top:1px solid var(--rule)}
 
-  .slider{width:100%;margin:6px 0 0;accent-color:var(--amber)}
+  details{border-top:1px solid var(--rule);margin-top:14px;padding-top:12px}
+  summary{cursor:pointer;font-family:var(--mono);font-size:11px;letter-spacing:.07em;
+          text-transform:uppercase;color:var(--mute);list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"+ ";color:var(--amber)}
+  details[open] summary::before{content:"− "}
+  .ticks{display:flex;justify-content:space-between;font-family:var(--mono);
+         font-size:10px;color:var(--mute);margin-top:2px}
 
   /* ---- export ---- */
   .paperCard{background:var(--paper);color:#1A1F26;border-radius:10px;padding:16px;margin-bottom:14px}
@@ -93,7 +129,6 @@
   #cropImg{max-width:180px;margin:0 auto}
   .hint{font-size:13px;color:var(--mute);margin-top:10px}
   .paperCard .hint{color:#5C6470}
-
   .note{font-size:13px;color:var(--mute);margin-top:10px}
   .err{color:var(--fail);font-size:13px;margin-top:10px}
   input[type=file]{display:none}
@@ -116,7 +151,7 @@
   <button class="act primary" id="btnStart">Start camera</button>
   <button class="act primary" id="btnShoot" hidden>Take photo</button>
   <button class="act ghost" id="btnFlip" hidden>Switch camera</button>
-  <p class="note">Fit the head inside the oval and put the eyes on the dashed line. Fill the frame this loosely on purpose — the guide already accounts for the margin the crop needs.</p>
+  <p class="note">Put the top of the head on the upper line and the chin on the lower one, with the face on the centre line. It will feel like you are standing too far back. That is the point — the crop needs the extra margin.</p>
   <p class="err" id="camErr" hidden></p>
 </div>
 
@@ -126,38 +161,60 @@
     <button class="act primary" id="btnPick">Choose a photo</button>
     <input type="file" id="file" accept="image/*">
     <p class="note">Pick a shot from your library. Nothing leaves your phone — all of this runs in the page.</p>
+    <p class="err" id="pickErr" hidden></p>
   </div>
 
   <div id="measureCard" hidden>
     <div class="card">
       <div id="stage">
-        <img id="shot" alt="">
+        <canvas id="shot"></canvas>
         <div class="line" id="lineCrown"></div>
         <div class="line" id="lineChin"></div>
         <div class="line v" id="lineMid"></div>
-        <div class="grab" id="grabCrown"><span class="tag">TOP OF HEAD</span></div>
-        <div class="grab" id="grabChin"><span class="tag">CHIN</span></div>
-        <div class="grab v" id="grabMid"><span class="tag">MID</span></div>
+        <div class="grab nudge" id="grabCrown"><span class="tag">TOP OF HEAD</span><span class="knob"><i></i><i></i><i></i></span></div>
+        <div class="grab nudge" id="grabChin"><span class="tag">CHIN</span><span class="knob"><i></i><i></i><i></i></span></div>
+        <div class="grab v nudge" id="grabMid"><span class="tag">CENTRE</span><span class="knob"><i></i><i></i><i></i></span></div>
+      </div>
+
+      <p class="note" id="dragHint">Drag the three amber handles: one onto the top of the head, one under the chin, one down the centre of the face.</p>
+
+      <div class="steer">
+        <span>Straighten</span>
+        <input type="range" id="rotRange" min="-12" max="12" step="0.2" value="0" aria-label="Straighten the photo">
+        <span class="val" id="rotVal">0.0°</span>
+        <button class="mini" id="rotReset">Reset</button>
       </div>
 
       <div class="cal">
         <div class="calBar"><div class="calFill" id="calFill"><div class="calSpine"></div></div></div>
         <div class="calRead">
-          <div class="lbl">Head height on a 2×2</div>
+          <div class="lbl">Head on a 2×2</div>
           <div class="big" id="readNum">—</div>
-          <div class="verdict" id="verdict"></div>
+        </div>
+        <div class="prev">
+          <canvas id="liveCanvas" width="192" height="192"></canvas>
+          <div class="prevCap">What prints</div>
         </div>
       </div>
+      <div class="verdict" id="verdict">Place the handles to measure.</div>
       <div class="spec"><span>min 1.000″</span><span>max 1.375″</span></div>
+
+      <details id="tuneWrap">
+        <summary>Fine-tune the crop</summary>
+        <p class="note" style="margin-top:10px">
+          This sets how much of the 2″ photo the head fills. Anything from 1″ to 1⅜″ is legal,
+          and 1⅛″ sits safely in the middle, so you can usually leave it alone.
+          Drag toward <b>tighter</b> and the crop closes in on the face; drag toward
+          <b>looser</b> and more background shows. Watch the preview above as you move it.
+        </p>
+        <input type="range" class="slider" id="sizeRange" min="1" max="1.375" step="0.005" value="1.125"
+               style="width:100%;accent-color:var(--amber);margin-top:8px" aria-label="Head height">
+        <div class="ticks"><span>1.000″ looser</span><span id="sizeVal">1.125″</span><span>1.375″ tighter</span></div>
+      </details>
     </div>
 
-    <div class="card" id="sizeCard" hidden>
-      <div class="lbl">Head size <span id="sizeVal"></span></div>
-      <input type="range" class="slider" id="sizeRange" min="1" max="1.375" step="0.005" value="1.125">
-      <p class="note">1⅛″ is the comfortable middle of the legal range. Only move this if you need to.</p>
-    </div>
-
-    <button class="act primary" id="btnMake" disabled>Make print sheet</button>
+    <button class="act primary" id="btnMake" disabled>Place the handles first</button>
+    <p class="err" id="exportErr" hidden></p>
     <button class="act ghost" id="btnOther">Choose a different photo</button>
   </div>
 
@@ -185,15 +242,16 @@
 (function(){
 "use strict";
 
-// Geometry of a compliant 2x2. Chin sits 0.369 up from the bottom edge and the
-// crown 0.069 below the top edge when the head is 1.125" tall, which lands the
-// eyes inside the required 1.125"-1.375" band.
+/* Geometry of a compliant 2x2: the chin sits 0.369 of the frame height up from the
+   bottom edge, which puts the eyes inside the required 1.125"-1.375" band for any
+   head in the legal 1"-1.375" size range. */
 var CHIN_FROM_BOTTOM = 0.369, MIN_HEAD = 1.0, MAX_HEAD = 1.375, DEFAULT_HEAD = 1.125;
+var MAX_EDGE = 2400;   // iOS refuses to decode very large photos into a canvas
 
 var $ = function(id){ return document.getElementById(id); };
-var img = new Image(), natW = 0, natH = 0;
-var crownY = 0, chinY = 0, midX = 0;      // natural pixel coords
-var headIn = DEFAULT_HEAD, fit = null;
+var base = null, img = null, natW = 0, natH = 0;
+var crownY = 0, chinY = 0, midX = 0, headIn = DEFAULT_HEAD, angle = 0;
+var placed = false, fit = null;
 
 /* ---------------- tabs ---------------- */
 function show(which){
@@ -207,64 +265,61 @@ function show(which){
 $('tabCam').onclick = function(){ show('cam'); };
 $('tabPhoto').onclick = function(){ show('photo'); };
 
-/* ---------------- camera ---------------- */
-var stream = null, facing = 'environment';
-
+/* ---------------- camera ----------------
+   Same three lines as the measuring screen, at the positions a compliant photo
+   needs, so framing through the lens and measuring afterwards use one mental model. */
 function drawGuide(){
-  var top = 6.9, bottom = 100 - CHIN_FROM_BOTTOM * 100;   // 6.9 .. 63.1
-  var cy = (top + bottom) / 2, ry = (bottom - top) / 2, rx = 22;
-  var eye = 100 - 59.4;
+  var crown = 6.9, chin = 100 - CHIN_FROM_BOTTOM * 100;   // 6.9 and 63.1
+  function row(y, label){
+    return '<line x1="0" y1="' + y + '" x2="100" y2="' + y + '" stroke="#F0A22E" ' +
+             'stroke-width="0.6" vector-effect="non-scaling-stroke"/>' +
+           '<text x="3" y="' + (y - 1.8) + '" fill="#F0A22E" font-size="3.2" ' +
+             'font-family="ui-monospace,monospace" letter-spacing="0.25">' + label + '</text>';
+  }
   $('camGuide').innerHTML =
-    '<rect x="0" y="0" width="100" height="100" fill="none" stroke="rgba(240,162,46,.35)" stroke-width="1"/>' +
-    '<ellipse cx="50" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="none" ' +
-      'stroke="#F0A22E" stroke-width="0.9" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>' +
-    '<line x1="26" y1="' + eye + '" x2="74" y2="' + eye + '" stroke="#F0A22E" stroke-width="0.7" ' +
-      'stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>' +
-    '<text x="50" y="' + (eye - 2) + '" fill="#F0A22E" font-size="3.4" text-anchor="middle" ' +
-      'font-family="ui-monospace,monospace" letter-spacing="0.3">EYES</text>';
+    '<rect x="0.5" y="0.5" width="99" height="99" fill="none" stroke="rgba(240,162,46,.3)" ' +
+      'stroke-width="1" vector-effect="non-scaling-stroke"/>' +
+    row(crown, 'TOP OF HEAD') + row(chin, 'CHIN') +
+    '<line x1="50" y1="0" x2="50" y2="100" stroke="rgba(240,162,46,.45)" stroke-width="0.5" ' +
+      'stroke-dasharray="3 3" vector-effect="non-scaling-stroke"/>';
 }
 drawGuide();
 
+var stream = null, facing = 'environment';
 function stopCam(){
   if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
   $('btnShoot').hidden = true; $('btnFlip').hidden = true; $('btnStart').hidden = false;
 }
-
 async function startCam(){
   $('camErr').hidden = true;
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
     return camFail('This browser will not hand the page a camera. Use the photo tab instead.');
-  }
   try{
     stopCam();
     stream = await navigator.mediaDevices.getUserMedia({
-      video:{ facingMode: facing, width:{ideal:1920}, height:{ideal:1920} }, audio:false
-    });
+      video:{ facingMode: facing, width:{ideal:1920}, height:{ideal:1920} }, audio:false });
     $('cam').srcObject = stream;
     $('btnStart').hidden = true; $('btnShoot').hidden = false; $('btnFlip').hidden = false;
   }catch(e){
     camFail('The camera was blocked (' + (e && e.name ? e.name : 'error') +
-            '). This page is running inside a sandboxed frame, which Safari often will not grant camera access to. The photo tab does the same job.');
+            '). If this page is running inside an embedded frame, browsers refuse camera access. The photo tab does the same job.');
   }
 }
 function camFail(msg){ $('camErr').textContent = msg; $('camErr').hidden = false; stopCam(); }
-
 $('btnStart').onclick = startCam;
 $('btnFlip').onclick = function(){ facing = facing === 'environment' ? 'user' : 'environment'; startCam(); };
-
 $('btnShoot').onclick = function(){
-  var v = $('cam');
-  var side = Math.min(v.videoWidth, v.videoHeight);
+  var v = $('cam'), side = Math.min(v.videoWidth, v.videoHeight);
   if(!side) return;
   var c = document.createElement('canvas'); c.width = side; c.height = side;
   c.getContext('2d').drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2,
                                side, side, 0, 0, side, side);
   stopCam();
-  loadSrc(c.toDataURL('image/jpeg', 0.95));
+  adopt(c);
   show('photo');
 };
 
-/* ---------------- load a photo ---------------- */
+/* ---------------- loading ---------------- */
 $('btnPick').onclick = function(){ $('file').click(); };
 $('btnOther').onclick = function(){ $('file').value = ''; $('file').click(); };
 $('file').onchange = function(e){
@@ -273,56 +328,105 @@ $('file').onchange = function(e){
 };
 
 function loadSrc(src){
-  img = new Image();
-  img.onload = function(){
-    natW = img.naturalWidth; natH = img.naturalHeight;
-    $('shot').src = src;
-    // opening guesses, deliberately loose
-    crownY = natH * 0.14; chinY = natH * 0.70; midX = natW * 0.5;
-    headIn = DEFAULT_HEAD; $('sizeRange').value = DEFAULT_HEAD;
-    $('pickCard').hidden = true; $('measureCard').hidden = false; $('exportCard').hidden = true;
-    render();
+  var raw = new Image();
+  raw.onload = function(){
+    var w = raw.naturalWidth, h = raw.naturalHeight;
+    if(!w || !h) return failLoad('That image reported no dimensions.');
+    var k = Math.min(1, MAX_EDGE / Math.max(w, h));
+    var c = document.createElement('canvas');
+    c.width = Math.round(w * k); c.height = Math.round(h * k);
+    var cx = c.getContext('2d');
+    cx.imageSmoothingQuality = 'high';
+    cx.drawImage(raw, 0, 0, c.width, c.height);
+    try{
+      var px = cx.getImageData(Math.floor(c.width/2), Math.floor(c.height/2), 1, 1).data;
+      if(px[3] === 0) return failLoad('This photo would not render. Open it in Photos, tap Edit, save, and try that copy.');
+    }catch(err){ /* not fatal */ }
+    adopt(c);
   };
-  img.onerror = function(){
-    alert('That image would not decode. If it is a HEIC straight off the camera, open it in Photos and share it as a JPEG.');
+  raw.onerror = function(){
+    failLoad('That image would not decode. If it is a HEIC straight off the camera, open it in Photos and share it as a JPEG.');
   };
-  img.src = src;
+  raw.src = src;
 }
+function failLoad(msg){
+  $('pickCard').hidden = false; $('measureCard').hidden = true;
+  $('pickErr').textContent = msg; $('pickErr').hidden = false;
+}
+
+function adopt(canvas){
+  base = canvas; natW = canvas.width; natH = canvas.height;
+  $('shot').width = natW; $('shot').height = natH;
+  crownY = natH * 0.14; chinY = natH * 0.70; midX = natW * 0.5;
+  headIn = DEFAULT_HEAD; $('sizeRange').value = DEFAULT_HEAD;
+  angle = 0; $('rotRange').value = 0; $('rotVal').textContent = '0.0°';
+  placed = false;
+  ['grabCrown','grabChin','grabMid'].forEach(function(id){ $(id).classList.add('nudge'); });
+  $('dragHint').hidden = false;
+  $('pickErr').hidden = true; $('exportErr').hidden = true;
+  $('pickCard').hidden = true; $('measureCard').hidden = false; $('exportCard').hidden = true;
+  paint(); render();
+}
+
+/* ---------------- straighten ----------------
+   Rotate about the centre and zoom just enough to cover the frame, so no blank
+   wedges appear in the corners. Dimensions stay fixed, so the handles keep their
+   positions while the photo turns underneath them. */
+function paint(){
+  var c = $('shot'), x = c.getContext('2d');
+  x.setTransform(1,0,0,1,0,0);
+  x.clearRect(0,0,natW,natH);
+  if(!base) return;
+  if(!angle){ x.drawImage(base, 0, 0); return; }
+  var r = Math.abs(angle) * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
+  var s = Math.max((natW*cos + natH*sin)/natW, (natH*cos + natW*sin)/natH);
+  x.translate(natW/2, natH/2);
+  x.rotate(angle * Math.PI / 180);
+  x.scale(s, s);
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(base, -natW/2, -natH/2);
+  x.setTransform(1,0,0,1,0,0);
+}
+var rafPending = false;
+function queuePaint(){
+  if(rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(function(){ rafPending = false; paint(); render(); });
+}
+$('rotRange').oninput = function(){
+  angle = parseFloat(this.value);
+  $('rotVal').textContent = (angle > 0 ? '+' : '') + angle.toFixed(1) + '°';
+  queuePaint();
+};
+$('rotReset').onclick = function(){
+  angle = 0; $('rotRange').value = 0; $('rotVal').textContent = '0.0°'; paint(); render();
+};
 
 /* ---------------- dragging ---------------- */
 function stageRect(){ return $('stage').getBoundingClientRect(); }
-
-function bindV(handleId, set){
+function firstDrag(){
+  if(placed) return;
+  placed = true;
+  $('dragHint').hidden = true;
+  ['grabCrown','grabChin','grabMid'].forEach(function(id){ $(id).classList.remove('nudge'); });
+}
+function bind(handleId, axis, set){
   var el = $(handleId);
   el.addEventListener('pointerdown', function(ev){
-    ev.preventDefault(); el.setPointerCapture(ev.pointerId);
+    ev.preventDefault(); el.setPointerCapture(ev.pointerId); firstDrag();
     var move = function(e){
       var r = stageRect();
-      var y = (e.clientY - r.top) / r.height * natH;
-      set(Math.max(0, Math.min(natH, y)));
+      if(axis === 'y') set(Math.max(0, Math.min(natH, (e.clientY - r.top) / r.height * natH)));
+      else             set(Math.max(0, Math.min(natW, (e.clientX - r.left) / r.width * natW)));
       render();
     };
     var up = function(){ el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
   });
 }
-function bindH(handleId, set){
-  var el = $(handleId);
-  el.addEventListener('pointerdown', function(ev){
-    ev.preventDefault(); el.setPointerCapture(ev.pointerId);
-    var move = function(e){
-      var r = stageRect();
-      var x = (e.clientX - r.left) / r.width * natW;
-      set(Math.max(0, Math.min(natW, x)));
-      render();
-    };
-    var up = function(){ el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
-    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
-  });
-}
-bindV('grabCrown', function(v){ crownY = Math.min(v, chinY - natH * 0.02); });
-bindV('grabChin',  function(v){ chinY  = Math.max(v, crownY + natH * 0.02); });
-bindH('grabMid',   function(v){ midX = v; });
+bind('grabCrown','y', function(v){ crownY = Math.min(v, chinY - natH * 0.02); });
+bind('grabChin', 'y', function(v){ chinY  = Math.max(v, crownY + natH * 0.02); });
+bind('grabMid',  'x', function(v){ midX = v; });
 
 $('sizeRange').oninput = function(){ headIn = parseFloat(this.value); render(); };
 
@@ -330,17 +434,15 @@ $('sizeRange').oninput = function(){ headIn = parseFloat(this.value); render(); 
 function solve(){
   var head = chinY - crownY;
   if(head <= 0) return null;
-  // widest square crop that still holds the head in the right spot
   var sideAvail = Math.min(
     natW, natH,
     2 * Math.min(midX, natW - midX),
     chinY / (1 - CHIN_FROM_BOTTOM),
     (natH - chinY) / CHIN_FROM_BOTTOM
   );
-  var minHeadIn = 2 * head / sideAvail;      // smallest head this photo can reach
+  var minHeadIn = 2 * head / sideAvail;
   return { head: head, sideAvail: sideAvail, minHeadIn: minHeadIn, ok: minHeadIn <= MAX_HEAD };
 }
-
 function cropRect(hIn){
   var side = 2 * (chinY - crownY) / hIn;
   return { side: side, left: midX - side / 2, top: chinY - side * (1 - CHIN_FROM_BOTTOM) };
@@ -357,37 +459,67 @@ function render(){
   $('lineMid').style.left  = (midX / natW * 100) + '%';
   $('grabMid').style.left  = (midX / natW * 100) + '%';
 
+  var fillEl = $('calFill'), num = $('readNum'), ver = $('verdict'), btn = $('btnMake');
   fit = solve();
-  var fill = $('calFill'), num = $('readNum'), ver = $('verdict');
-  if(!fit){ num.textContent = '—'; return; }
+  if(!fit) return;
 
-  fill.style.top = pct(crownY);
-  fill.style.height = ((chinY - crownY) / natH * 100) + '%';
+  fillEl.style.top = pct(crownY);
+  fillEl.style.height = ((chinY - crownY) / natH * 100) + '%';
+
+  if(!placed){
+    fillEl.style.color = 'var(--mute)'; num.style.color = 'var(--mute)';
+    num.textContent = '—';
+    ver.textContent = 'Place the handles to measure.';
+    btn.disabled = true; btn.textContent = 'Place the handles first';
+    $('tuneWrap').hidden = true;
+    clearPreview();
+    return;
+  }
+  $('tuneWrap').hidden = false;
 
   if(fit.ok){
     $('sizeRange').min = Math.max(MIN_HEAD, fit.minHeadIn).toFixed(3);
     if(headIn < fit.minHeadIn){ headIn = fit.minHeadIn; $('sizeRange').value = headIn; }
     if(headIn > MAX_HEAD){ headIn = MAX_HEAD; $('sizeRange').value = headIn; }
     num.textContent = headIn.toFixed(2) + '″';
-    fill.style.color = 'var(--pass)'; num.style.color = 'var(--pass)';
-    ver.innerHTML = 'In spec. This photo has the margin the crop needs.';
-    $('btnMake').disabled = false;
-    $('sizeCard').hidden = false;
     $('sizeVal').textContent = headIn.toFixed(3) + '″';
+    fillEl.style.color = 'var(--pass)'; num.style.color = 'var(--pass)';
+    ver.textContent = 'In spec. This photo has the margin the crop needs.';
+    btn.disabled = false; btn.textContent = 'Make print sheet';
+    drawPreview();
   }else{
+    var over = fit.minHeadIn - MAX_HEAD;
+    var pctOver = over / MAX_HEAD * 100;
     num.textContent = fit.minHeadIn.toFixed(2) + '″';
-    fill.style.color = 'var(--fail)'; num.style.color = 'var(--fail)';
-    var over = Math.round((fit.minHeadIn / MAX_HEAD - 1) * 100);
-    ver.innerHTML = 'Too close by about <b>' + over + '%</b>. The best this photo can reach is ' +
-      fit.minHeadIn.toFixed(2) + '″, and the limit is 1.375″. Step back and reshoot — ' +
-      'frame from the top of the head down to the waist.';
-    $('btnMake').disabled = true;
-    $('sizeCard').hidden = true;
+    fillEl.style.color = 'var(--fail)'; num.style.color = 'var(--fail)';
+    ver.innerHTML = pctOver < 2
+      ? 'Just over. The smallest this photo can reach is ' + fit.minHeadIn.toFixed(3) +
+        '″, which is ' + over.toFixed(3) + '″ past the 1.375″ limit. Check the handles are exactly on the crown and chin — otherwise one small step back would do it.'
+      : 'Too close by <b>' + Math.round(pctOver) + '%</b>. The smallest this photo can reach is ' +
+        fit.minHeadIn.toFixed(2) + '″ against a 1.375″ limit. Step back and reshoot — frame from the top of the head down to the waist.';
+    btn.disabled = true; btn.textContent = 'Cannot print — shot too close';
+    clearPreview();
   }
 }
 
+/* live 2x2 preview so the fine-tune slider has something visible to act on */
+function clearPreview(){
+  var c = $('liveCanvas'), x = c.getContext('2d');
+  x.fillStyle = '#0B1017'; x.fillRect(0, 0, c.width, c.height);
+  x.strokeStyle = 'rgba(126,139,155,.35)'; x.setLineDash([5,5]); x.lineWidth = 2;
+  x.strokeRect(6, 6, c.width - 12, c.height - 12);
+}
+function drawPreview(){
+  var c = $('liveCanvas'), x = c.getContext('2d'), r = cropRect(headIn);
+  x.setLineDash([]);
+  x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.imageSmoothingQuality = 'high';
+  x.drawImage($('shot'), r.left, r.top, r.side, r.side, 0, 0, c.width, c.height);
+}
+clearPreview();
+
 /* ---------------- export ---------------- */
-var DPI = 300, PHOTO = 2 * DPI, SHEET_W = 6 * DPI, SHEET_H = 4 * DPI;
+var DPI = 300, PHOTO = 2 * DPI, SHEET_W = 6 * DPI, SHEET_H = 4 * DPI, sheetURL = null;
 
 function renderCrop(){
   var r = cropRect(headIn);
@@ -395,10 +527,9 @@ function renderCrop(){
   var x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, PHOTO, PHOTO);
   x.imageSmoothingQuality = 'high';
-  x.drawImage(img, r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
+  x.drawImage($('shot'), r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
   return c;
 }
-
 function renderSheet(one){
   var c = document.createElement('canvas'); c.width = SHEET_W; c.height = SHEET_H;
   var x = c.getContext('2d');
@@ -410,15 +541,21 @@ function renderSheet(one){
   x.beginPath(); x.moveTo(0, PHOTO); x.lineTo(SHEET_W, PHOTO); x.stroke();
   return c;
 }
-
-var sheetURL = null;
 $('btnMake').onclick = function(){
-  var one = renderCrop(), sheet = renderSheet(one);
-  $('cropImg').src = one.toDataURL('image/jpeg', 0.95);
-  sheetURL = sheet.toDataURL('image/jpeg', 0.95);
-  $('sheetImg').src = sheetURL;
-  $('measureCard').hidden = true; $('exportCard').hidden = false;
-  window.scrollTo(0, 0);
+  $('exportErr').hidden = true;
+  try{
+    var one = renderCrop(), sheet = renderSheet(one);
+    var cropURL = one.toDataURL('image/jpeg', 0.95);
+    sheetURL = sheet.toDataURL('image/jpeg', 0.95);
+    if(!sheetURL || sheetURL.length < 2000) throw new Error('the sheet came back empty');
+    $('cropImg').src = cropURL; $('sheetImg').src = sheetURL;
+    $('measureCard').hidden = true; $('exportCard').hidden = false;
+    window.scrollTo(0, 0);
+  }catch(err){
+    $('exportErr').textContent = 'The sheet could not be built: ' +
+      (err && err.message ? err.message : 'unknown error') + '. Try a different photo.';
+    $('exportErr').hidden = false;
+  }
 };
 $('btnBack').onclick = function(){ $('exportCard').hidden = true; $('measureCard').hidden = false; };
 $('btnSave').onclick = function(){
@@ -435,7 +572,6 @@ if('serviceWorker' in navigator){
   });
 }
 var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-if(iOS && !standalone) $('installHint').hidden = false;
+if(/iPad|iPhone|iPod/.test(navigator.userAgent) && !standalone) $('installHint').hidden = false;
 })();
 </script>
