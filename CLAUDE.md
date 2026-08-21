@@ -57,6 +57,50 @@ second resample — which is exactly what a 300 dpi sheet came back looking like
 downscale, and `stampDPI()` writes the real density into the JFIF APP0 header for
 kiosks that size from the header rather than the pixel count.
 
+### Background and lighting
+
+Two optional passes, both off by default, both applied before the crop so the export
+inherits them. Neither uses a model: a model means a download, and this has to work
+offline with the photo never leaving the phone. They lean instead on two things that
+are true of a passport photo and not of photos generally — the background is meant to
+be plain and touches the frame edge, and the subject is wherever the handles were just
+placed.
+
+**Background** (`bgMask`) scores each pixel on *chromaticity* distance from a reference
+colour learned at the frame edge, not on colour distance. A shadow on a white wall is
+the same hue at a lower level; treating that as "not background" is what leaves a grey
+smear behind the head. A flood fill from the top and upper sides then discards anything
+not joined to the frame edge, which is what stops a white shirt or a bright forehead
+reading as wall. The result is a soft matte, blurred and upsampled — deliberately a
+matte and not a cut-out, because a soft edge that is slightly wrong reads as a slightly
+uneven wall, where a hard edge that is slightly wrong reads as a bad cut-out and gets
+the photo rejected. Clean blends 78% toward white, White goes all the way.
+
+The subject guard is *not* absolute. It widens quadratically below the chin so it hugs
+the neck, and a pixel that matches the wall unmistakably is cleaned even inside it.
+Both of those exist because of the same bug: a guard that fanned out linearly from the
+chin was far wider than a real neck, so it protected wall, and a pale wedge appeared
+under the jaw. Do not widen it back.
+
+**Lighting** (`toneLUTs`, `illumField`) white-balances off the background — which is
+supposed to be white, making it the most trustworthy reference in the frame and better
+than a grey-world guess a warm shirt would skew. Exposure is set from the median
+luminance *inside the head*, since an average over the frame mostly measures how big
+the background is, and applied as gamma so lifting a dark face does not clip the wall
+behind it. A heavily blurred luminance map estimates how the light fell and divides it
+out, which flattens a side-lit face; kept gentle, because taken far it flattens the
+face too.
+
+Measured on a deliberately bad frame (cool cast, wall falling off across the frame,
+underexposed side-lit subject): face 87 → 144, colour cast 22 → 6, wall unevenness
+34 → 15 on lighting alone; wall unevenness → 0 and cast → 0 on White.
+
+**Resolution split.** The preview runs the passes at `PREVIEW_EDGE` (1500) so the
+controls stay responsive; the export runs them once more at full resolution, clipped
+to the crop square since nothing outside it is ever read back. Same parameters both
+times, so what you judged on screen is what prints. Verified pixel-identical with and
+without the clip.
+
 Two entry points, one measuring screen:
 - **Live camera** — `getUserMedia`, square viewfinder, three guide lines at the
   positions a compliant photo needs. Captures a square frame.
@@ -83,7 +127,7 @@ attribute. Sandboxed previews (Claude artifacts, CodePen, etc.) don't, so the
 camera tab fails there and falls back with an explanatory message. On Pages it
 works normally.
 
-**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v6`.
+**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v7`.
 
 The app shell is served **network-first**, everything else cache-first. It was all
 cache-first, which made every redeploy land one launch late — the phone served the
@@ -126,6 +170,12 @@ and would otherwise ship.
 - Straighten corrects a tilted camera, not a tilted head. Rotating to fix a
   cocked head slants the background, which is its own rejection risk. Possibly
   worth warning about in the UI.
+- The background matte has never been tried on real hair. Wispy or backlit strands
+  are where a classical matte is weakest, and White is the setting that will show it.
+  The UI says so; a real photo is still the only way to know.
+- White mode will whiten a genuinely white shirt if the wall reaches it from the frame
+  edge. The subject guard is the only thing standing in the way and it is deliberately
+  permissive. Clean is unaffected in practice, since it only blends part way.
 - No EXIF orientation handling beyond what the browser applies. Fine so far
   because display and crop share one canvas, but worth a look if a photo ever
   comes out sideways.

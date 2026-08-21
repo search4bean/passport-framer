@@ -94,6 +94,23 @@
         border-radius:6px;padding:5px 9px;font-family:var(--mono);font-size:10px;
         letter-spacing:.06em;cursor:pointer;flex:none}
 
+  /* ---- background + lighting ---- */
+  .enhBlock{padding-top:14px;margin-top:14px;border-top:1px solid var(--rule)}
+  .enhRow{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .enhLbl{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+          color:var(--mute);width:88px;flex:none}
+  .seg{display:flex;gap:4px;flex:1;min-width:0}
+  .segBtn{flex:1;padding:7px 4px;background:var(--ink);border:1px solid var(--rule);
+          color:var(--mute);font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+          text-transform:uppercase;border-radius:6px;cursor:pointer;min-width:0}
+  .segBtn[aria-pressed=true]{background:var(--amber);border-color:var(--amber);
+          color:#241802;font-weight:700}
+  .enhRow input[type=range]{flex:1;accent-color:var(--amber);min-width:0}
+  .enhFoot{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .busy{font-family:var(--mono);font-size:10px;letter-spacing:.06em;
+        text-transform:uppercase;color:var(--amber)}
+  .enhNote{margin:8px 0 0;font-size:13px;color:var(--mute);line-height:1.45}
+
   /* ---- caliper + readout + live preview ---- */
   .cal{display:flex;gap:12px;align-items:stretch;margin-top:16px}
   .calBar{position:relative;width:34px;flex:none;border-left:1px solid var(--rule)}
@@ -198,6 +215,35 @@
       </div>
       <div class="verdict" id="verdict">Place the handles to measure.</div>
       <div class="spec"><span>min 1.000″</span><span>max 1.375″</span></div>
+
+      <div class="enhBlock">
+        <div class="enhRow">
+          <span class="enhLbl">Background</span>
+          <div class="seg" id="bgSeg" role="group" aria-label="Background treatment">
+            <button type="button" class="segBtn" data-bg="0" aria-pressed="true">Off</button>
+            <button type="button" class="segBtn" data-bg="1" aria-pressed="false">Clean</button>
+            <button type="button" class="segBtn" data-bg="2" aria-pressed="false">White</button>
+          </div>
+        </div>
+        <div class="enhRow">
+          <span class="enhLbl">Lighting</span>
+          <div class="seg" id="lightSeg" role="group" aria-label="Lighting correction">
+            <button type="button" class="segBtn" data-light="0" aria-pressed="true">Off</button>
+            <button type="button" class="segBtn" data-light="1" aria-pressed="false">Auto</button>
+          </div>
+        </div>
+        <div class="enhRow" id="lightAmtRow" hidden>
+          <span class="enhLbl">Strength</span>
+          <input type="range" id="lightRange" min="0.2" max="1" step="0.05" value="0.7"
+                 aria-label="Lighting strength">
+          <span class="val" id="lightVal">70%</span>
+        </div>
+        <p class="enhNote" id="enhNote" hidden></p>
+        <div class="enhFoot" id="enhFoot" hidden>
+          <button type="button" class="mini" id="btnCompare">Hold to compare</button>
+          <span class="busy" id="enhBusy" hidden>Working…</span>
+        </div>
+      </div>
 
       <details id="tuneWrap">
         <summary>Fine-tune the crop</summary>
@@ -391,6 +437,7 @@ function failLoad(msg){
 
 function adopt(canvas){
   base = canvas; natW = canvas.width; natH = canvas.height;
+  analysis = null; enhanced = null;
   $('shot').width = natW; $('shot').height = natH;
   crownY = natH * 0.14; chinY = natH * 0.70; midX = natW * 0.5;
   headIn = DEFAULT_HEAD; $('sizeRange').value = DEFAULT_HEAD;
@@ -401,26 +448,38 @@ function adopt(canvas){
   $('pickErr').hidden = true; $('exportErr').hidden = true;
   $('pickCard').hidden = true; $('measureCard').hidden = false; $('exportCard').hidden = true;
   paint(); render();
+  scheduleEnhance();          // the modes carry over from the last photo
 }
 
 /* ---------------- straighten ----------------
    Rotate about the centre and zoom just enough to cover the frame, so no blank
    wedges appear in the corners. Dimensions stay fixed, so the handles keep their
    positions while the photo turns underneath them. */
+/* Draw base into a w x h target under the current straighten transform. Shared so an
+   enhanced copy can be built in the same coordinates the handles were placed in -
+   the handles are read off the rotated picture, so a mask built on the unrotated one
+   would sit crooked over the face. */
+function drawBase(x, w, h){
+  if(!angle){ x.drawImage(base, 0, 0, w, h); return; }
+  var r = Math.abs(angle) * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
+  var s = Math.max((natW*cos + natH*sin)/natW, (natH*cos + natW*sin)/natH);
+  x.save();
+  x.translate(w/2, h/2);
+  x.rotate(angle * Math.PI / 180);
+  x.scale(s * w / natW, s * h / natH);
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  x.drawImage(base, -natW/2, -natH/2);
+  x.restore();
+}
+
 function paint(){
   var c = $('shot'), x = c.getContext('2d');
   x.setTransform(1,0,0,1,0,0);
   x.clearRect(0,0,natW,natH);
   if(!base) return;
-  if(!angle){ x.drawImage(base, 0, 0); return; }
-  var r = Math.abs(angle) * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
-  var s = Math.max((natW*cos + natH*sin)/natW, (natH*cos + natW*sin)/natH);
-  x.translate(natW/2, natH/2);
-  x.rotate(angle * Math.PI / 180);
-  x.scale(s, s);
-  x.imageSmoothingQuality = 'high';
-  x.drawImage(base, -natW/2, -natH/2);
-  x.setTransform(1,0,0,1,0,0);
+  // the enhanced copy already carries the rotation, so it goes down as-is
+  if(!showOriginal && enhanced){ x.drawImage(enhanced, 0, 0, natW, natH); return; }
+  drawBase(x, natW, natH);
 }
 var rafPending = false;
 function queuePaint(){
@@ -432,10 +491,398 @@ $('rotRange').oninput = function(){
   angle = parseFloat(this.value);
   $('rotVal').textContent = (angle > 0 ? '+' : '') + angle.toFixed(1) + '°';
   queuePaint();
+  scheduleEnhance();      // the picture moved under the handles; rebuild the matte
 };
 $('rotReset').onclick = function(){
   angle = 0; $('rotRange').value = 0; $('rotVal').textContent = '0.0°'; paint(); render();
+  scheduleEnhance();
 };
+
+/* ---------------- background + lighting ---------------- */
+
+/* Both passes lean on two things that are true of a passport photo and not of photos
+   in general: the background is meant to be plain and it touches the frame edge, and
+   the subject is wherever the handles were just placed. That is enough to separate
+   subject from background without a segmentation model - which matters, because a
+   model means a download, and this has to work offline with the photo never leaving
+   the phone. Classical methods also fail gracefully: a soft matte that is slightly
+   wrong looks like a slightly uneven wall, where a bad cut-out looks like a bad
+   cut-out and gets the photo rejected. */
+
+var MASK_EDGE = 320;        // the matte is soft and upsampled; it does not need to be big
+var bgMode = 0;             // 0 off, 1 clean, 2 white
+var lightOn = false, lightAmt = 0.7;
+var enhanced = null;        // base with the passes applied, or null when both are off
+var analysis = null;        // per-photo stats; survives handle drags, dies with the photo
+var enhTimer = null, showOriginal = false;
+
+function smoothStep(a, b, t){
+  var u = (t - a) / (b - a);
+  u = u < 0 ? 0 : u > 1 ? 1 : u;
+  return u * u * (3 - 2 * u);
+}
+function median(a){
+  if(!a.length) return 0;
+  a.sort(function(p, q){ return p - q; });
+  return a[a.length >> 1];
+}
+
+/* A running-sum box blur, so the radius is free. The illumination estimate below needs
+   a radius near a fifth of the frame, which a naive kernel could not afford. */
+function boxBlur(src, w, h, r){
+  var tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+  var x, y, i, sum, span, row, add, sub;
+  for(y = 0; y < h; y++){
+    row = y * w; sum = 0; span = 0;
+    for(i = 0; i <= r && i < w; i++){ sum += src[row + i]; span++; }
+    for(x = 0; x < w; x++){
+      tmp[row + x] = sum / span;
+      add = x + r + 1; sub = x - r;
+      if(add < w){ sum += src[row + add]; span++; }
+      if(sub >= 0){ sum -= src[row + sub]; span--; }
+    }
+  }
+  for(x = 0; x < w; x++){
+    sum = 0; span = 0;
+    for(i = 0; i <= r && i < h; i++){ sum += tmp[i * w + x]; span++; }
+    for(y = 0; y < h; y++){
+      out[y * w + x] = sum / span;
+      add = y + r + 1; sub = y - r;
+      if(add < h){ sum += tmp[add * w + x]; span++; }
+      if(sub >= 0){ sum -= tmp[sub * w + x]; span--; }
+    }
+  }
+  return out;
+}
+
+function analyse(){
+  var k = Math.min(1, MASK_EDGE / Math.max(natW, natH));
+  var c = document.createElement('canvas');
+  c.width = Math.max(8, Math.round(natW * k));
+  c.height = Math.max(8, Math.round(natH * k));
+  var cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+  drawBase(cx, c.width, c.height);
+  var w = c.width, h = c.height;
+  var d = cx.getImageData(0, 0, w, h).data;
+
+  /* Learn the background from the top edge and the upper sides only. The bottom edge
+     is shoulders in any correctly framed shot, and sampling it learns the shirt. */
+  var band = Math.max(2, Math.round(Math.min(w, h) * 0.07));
+  var rs = [], gs = [], bs = [], x, y, i;
+  for(y = 0; y < h; y++) for(x = 0; x < w; x++){
+    if(!(y < band || ((x < band || x >= w - band) && y < h * 0.55))) continue;
+    i = (y * w + x) * 4;
+    rs.push(d[i]); gs.push(d[i + 1]); bs.push(d[i + 2]);
+  }
+  return { w: w, h: h, data: d,
+           bg: { r: median(rs) || 235, g: median(gs) || 235, b: median(bs) || 235 } };
+}
+
+/* Median luminance inside the head, which is what exposure should actually be set by -
+   an average over the whole frame just measures how big the background is. */
+function faceLum(a){
+  var k = a.w / natW;
+  var cxp = midX * k, cyp = (crownY + chinY) / 2 * k;
+  var ry = (chinY - crownY) / 2 * k, rx = (chinY - crownY) * 0.34 * k;
+  var vals = [], x, y, nx, ny, i;
+  for(y = Math.max(0, Math.floor(cyp - ry)); y < Math.min(a.h, cyp + ry); y++)
+    for(x = Math.max(0, Math.floor(cxp - rx)); x < Math.min(a.w, cxp + rx); x++){
+      nx = (x - cxp) / rx; ny = (y - cyp) / ry;
+      if(nx * nx + ny * ny > 1) continue;
+      i = (y * a.w + x) * 4;
+      vals.push(0.299 * a.data[i] + 0.587 * a.data[i + 1] + 0.114 * a.data[i + 2]);
+    }
+  return vals.length ? median(vals) : 128;
+}
+
+function bgMask(a){
+  var w = a.w, h = a.h, d = a.data, n = w * h;
+  var B = a.bg, BL = 0.299 * B.r + 0.587 * B.g + 0.114 * B.b + 1e-6;
+  var br = B.r / BL, bg2 = B.g / BL, bb = B.b / BL;
+  var score = new Float32Array(n);
+
+  var k = w / natW;
+  var cxp = midX * k, cyp = (crownY + chinY) / 2 * k;
+  var hry = (chinY - crownY) / 2 * k, hrx = (chinY - crownY) * 0.34 * k;
+  var x, y, p, i, r, g, b, L, cd, rel, sc, nx, ny, t, half, prot;
+
+  for(y = 0; y < h; y++) for(x = 0; x < w; x++){
+    p = y * w + x; i = p * 4;
+    r = d[i]; g = d[i + 1]; b = d[i + 2];
+    L = 0.299 * r + 0.587 * g + 0.114 * b + 1e-6;
+
+    /* Compare chromaticity rather than colour. A shadow on a white wall is the same
+       hue at a lower level, and calling that "not background" is exactly what leaves
+       a grey smear behind the head. */
+    cd = Math.abs(r / L - br) + Math.abs(g / L - bg2) + Math.abs(b / L - bb);
+    rel = L / BL;
+    sc = smoothStep(0.34, 0.10, cd) *
+         smoothStep(0.30, 0.52, rel) * smoothStep(1.85, 1.45, rel);
+
+    /* Hold the subject out of it even when they are wearing the colour of the wall.
+       The guard widens quadratically so it hugs the neck and only spreads out near the
+       shoulders - a guard that fans out linearly from the chin is far wider than a real
+       neck, and it protects wall, which shows up as a pale wedge under the jaw. */
+    prot = 0;
+    nx = (x - cxp) / (hrx * 1.02); ny = (y - cyp) / (hry * 1.02);
+    if(nx * nx + ny * ny < 1) prot = 1;
+    else if(y > cyp){
+      t = (y - cyp) / Math.max(1, h - cyp);
+      half = hrx * (0.45 + 1.30 * t * t);
+      prot = 1 - smoothStep(half * 0.75, half, Math.abs(x - cxp));
+    }
+
+    /* The guard is not absolute. A pixel that matches the wall unmistakably gets
+       cleaned even inside it, which is what keeps the remaining halo from forming;
+       anything less certain stays protected, which is what keeps a white shirt. */
+    if(prot > 0) sc *= (1 - prot) + prot * smoothStep(0.70, 0.92, sc);
+    score[p] = sc;
+  }
+
+  /* Only pixels joined to the frame edge through other background count. Without this
+     a white shirt or a bright forehead reads as wall. Seeded from the top and the
+     upper sides for the same reason the reference colour was. */
+  var seen = new Uint8Array(n), stack = [], q, qy, qx;
+  for(x = 0; x < w; x++) if(score[x] > 0.30){ seen[x] = 1; stack.push(x); }
+  for(y = 0; y < h * 0.6; y++){
+    p = y * w;
+    if(score[p] > 0.30 && !seen[p]){ seen[p] = 1; stack.push(p); }
+    p = y * w + w - 1;
+    if(score[p] > 0.30 && !seen[p]){ seen[p] = 1; stack.push(p); }
+  }
+  while(stack.length){
+    q = stack.pop(); qy = (q / w) | 0; qx = q - qy * w;
+    if(qx > 0     && !seen[q - 1] && score[q - 1] > 0.30){ seen[q - 1] = 1; stack.push(q - 1); }
+    if(qx < w - 1 && !seen[q + 1] && score[q + 1] > 0.30){ seen[q + 1] = 1; stack.push(q + 1); }
+    if(qy > 0     && !seen[q - w] && score[q - w] > 0.30){ seen[q - w] = 1; stack.push(q - w); }
+    if(qy < h - 1 && !seen[q + w] && score[q + w] > 0.30){ seen[q + w] = 1; stack.push(q + w); }
+  }
+  for(p = 0; p < n; p++) if(!seen[p]) score[p] = 0;
+
+  return boxBlur(score, w, h, 2);          // feather, so no hard line appears anywhere
+}
+
+/* A heavily blurred luminance map is a serviceable estimate of how the light fell.
+   Dividing by it flattens a side-lit face. Done gently: taken far it also flattens
+   the face itself, and a mask-flat portrait looks worse than a slightly uneven one. */
+function illumField(a){
+  var n = a.w * a.h, f = new Float32Array(n), p, i;
+  for(p = 0; p < n; p++){
+    i = p * 4;
+    f[p] = 0.299 * a.data[i] + 0.587 * a.data[i + 1] + 0.114 * a.data[i + 2];
+  }
+  var r = Math.max(4, Math.round(Math.min(a.w, a.h) * 0.18));
+  return boxBlur(boxBlur(f, a.w, a.h, r), a.w, a.h, r);
+}
+
+function toneLUTs(a){
+  var B = a.bg, BL = 0.299 * B.r + 0.587 * B.g + 0.114 * B.b + 1e-6;
+  /* The background is supposed to be white, which makes it the most trustworthy white
+     reference in the frame - better than a grey-world guess that a warm shirt skews. */
+  var gain = [BL / (B.r || 1), BL / (B.g || 1), BL / (B.b || 1)], c;
+  for(c = 0; c < 3; c++) gain[c] = Math.max(0.78, Math.min(1.28, gain[c]));
+
+  /* Aim the face, not the frame, at a normal exposure. Gamma rather than a multiply,
+     so lifting a dark face does not clip the wall behind it to paper. */
+  var Lf = Math.max(8, Math.min(247, faceLum(a)));
+  var gamma = Math.log(168 / 255) / Math.log(Lf / 255);
+  gamma = Math.max(0.55, Math.min(1.7, gamma));
+
+  var luts = [new Uint8Array(256), new Uint8Array(256), new Uint8Array(256)], v, ch, sv;
+  for(v = 0; v < 256; v++) for(ch = 0; ch < 3; ch++){
+    sv = Math.min(255, v * gain[ch]) / 255;
+    sv = Math.pow(sv, gamma);
+    sv = 1 - Math.pow(1 - sv, 1.3);          // lift shadows, leave the highlights put
+    sv = (sv - 0.5) * 1.06 + 0.5;            // hand back a little of the contrast
+    sv = sv < 0 ? 0 : sv > 1 ? 1 : sv;
+    sv = v + (sv * 255 - v) * lightAmt;      // fold the slider in, so it is predictable
+    luts[ch][v] = sv < 0 ? 0 : sv > 255 ? 255 : Math.round(sv);
+  }
+  return luts;
+}
+
+var PREVIEW_EDGE = 1500;
+
+/* Build a w x h copy with whichever passes are on. The preview calls this small so the
+   controls stay responsive; the export calls it once at full size so nothing soft
+   reaches the print. Same parameters either way, so what you judged on screen is what
+   comes out. */
+function applyPasses(w, h, clip){
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  var x = c.getContext('2d');
+  drawBase(x, w, h);
+  if(!bgMode && !lightOn) return c;
+
+  var a = analysis || (analysis = analyse());
+
+  /* The export only ever reads the crop square back out, so there is no reason to run
+     the loop over the parts of the frame that get thrown away. The preview passes no
+     clip, because the whole stage is on screen. */
+  var bx0 = 0, by0 = 0, bx1 = w, by1 = h;
+  if(clip){
+    bx0 = Math.max(0, Math.floor(clip.left));
+    by0 = Math.max(0, Math.floor(clip.top));
+    bx1 = Math.min(w, Math.ceil(clip.left + clip.side));
+    by1 = Math.min(h, Math.ceil(clip.top + clip.side));
+    if(bx1 - bx0 < 1 || by1 - by0 < 1){ bx0 = 0; by0 = 0; bx1 = w; by1 = h; }
+  }
+  var bw = bx1 - bx0, bh = by1 - by0;
+  var img = x.getImageData(bx0, by0, bw, bh), d = img.data;
+
+  var luts = lightOn ? toneLUTs(a) : null;
+  var lut0, lut1, lut2;
+  if(luts){ lut0 = luts[0]; lut1 = luts[1]; lut2 = luts[2]; }
+
+  var field = null, fieldMean = 0, flatten = 0, q;
+  if(lightOn){
+    field = illumField(a);
+    for(q = 0; q < field.length; q++) fieldMean += field[q];
+    fieldMean /= field.length;
+    flatten = 0.35 * lightAmt;
+  }
+  var mask = bgMode ? bgMask(a) : null;
+  var bgAmt = bgMode === 2 ? 1 : 0.78;
+
+  var mw = a.w, mh = a.h, sx = mw / w, sy = mh / h;
+  var colX0 = new Int32Array(bw), colTx = new Float32Array(bw), xc, fx, x0;
+  for(xc = 0; xc < bw; xc++){
+    fx = (xc + bx0) * sx; x0 = fx | 0;      // matte coords are absolute, pixels are local
+    if(x0 > mw - 2) x0 = mw - 2;
+    colX0[xc] = x0; colTx[xc] = fx - x0;
+  }
+
+  /* Interpolate a whole row of the matte at a time. A bilinear fetch per pixel was the
+     difference between this feeling instant and taking three seconds. */
+  var mRow = mask ? new Float32Array(bw) : null;
+  var fRow = field ? new Float32Array(bw) : null;
+  var y, fy, y0, ty, r0, r1, i, r, g, b, m, kk, t, aTop, aBot;
+
+  for(y = 0; y < bh; y++){
+    fy = (y + by0) * sy; y0 = fy | 0;
+    if(y0 > mh - 2) y0 = mh - 2;
+    ty = fy - y0; r0 = y0 * mw; r1 = r0 + mw;
+
+    if(mRow) for(xc = 0; xc < bw; xc++){
+      x0 = colX0[xc]; t = colTx[xc];
+      aTop = mask[r0 + x0] + (mask[r0 + x0 + 1] - mask[r0 + x0]) * t;
+      aBot = mask[r1 + x0] + (mask[r1 + x0 + 1] - mask[r1 + x0]) * t;
+      mRow[xc] = (aTop + (aBot - aTop) * ty) * bgAmt;
+    }
+    if(fRow) for(xc = 0; xc < bw; xc++){
+      x0 = colX0[xc]; t = colTx[xc];
+      aTop = field[r0 + x0] + (field[r0 + x0 + 1] - field[r0 + x0]) * t;
+      aBot = field[r1 + x0] + (field[r1 + x0 + 1] - field[r1 + x0]) * t;
+      fRow[xc] = aTop + (aBot - aTop) * ty;
+    }
+
+    i = y * bw * 4;
+    for(xc = 0; xc < bw; xc++, i += 4){
+      r = d[i]; g = d[i + 1]; b = d[i + 2];
+      if(luts){
+        r = lut0[r]; g = lut1[g]; b = lut2[b];
+        t = fRow[xc];
+        kk = 1 + flatten * (fieldMean / (t < 8 ? 8 : t) - 1);
+        if(kk < 0.75) kk = 0.75; else if(kk > 1.45) kk = 1.45;
+        r *= kk; g *= kk; b *= kk;
+      }
+      if(mRow){
+        m = mRow[xc];
+        if(m > 0.002){ r += (255 - r) * m; g += (255 - g) * m; b += (255 - b) * m; }
+      }
+      d[i]     = r < 0 ? 0 : r > 255 ? 255 : r;
+      d[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g;
+      d[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+    }
+  }
+  x.putImageData(img, bx0, by0);
+  return c;
+}
+
+function rebuildEnhanced(){
+  if(!base || (!bgMode && !lightOn)){ enhanced = null; return; }
+  var k = Math.min(1, PREVIEW_EDGE / Math.max(natW, natH));
+  enhanced = applyPasses(Math.max(1, Math.round(natW * k)),
+                         Math.max(1, Math.round(natH * k)));
+}
+
+function setBusy(on){ $('enhBusy').hidden = !on; }
+
+function scheduleEnhance(){
+  if(enhTimer){ clearTimeout(enhTimer); enhTimer = null; }
+  if(!base) return;
+  if(!bgMode && !lightOn){ enhanced = null; setBusy(false); queuePaint(); return; }
+  analysis = null;          // the straighten transform feeds it; never reuse across a change
+  setBusy(true);
+  enhTimer = setTimeout(function(){
+    enhTimer = null;
+    /* A short timeout rather than requestAnimationFrame: rAF does not fire at all
+       while the page is hidden, so backgrounding the app mid-pass would leave it
+       stuck on "Working" until you came back. This still lets the busy state paint. */
+    setTimeout(function(){
+      try{ rebuildEnhanced(); }
+      catch(err){ enhanced = null; }
+      setBusy(false);
+      queuePaint();
+    }, 16);
+  }, 180);
+}
+
+function syncEnhUI(){
+  var i, el;
+  var bs = $('bgSeg').getElementsByClassName('segBtn');
+  for(i = 0; i < bs.length; i++){
+    el = bs[i];
+    el.setAttribute('aria-pressed', String(+el.getAttribute('data-bg') === bgMode));
+  }
+  var ls = $('lightSeg').getElementsByClassName('segBtn');
+  for(i = 0; i < ls.length; i++){
+    el = ls[i];
+    el.setAttribute('aria-pressed', String((el.getAttribute('data-light') === '1') === lightOn));
+  }
+  $('lightAmtRow').hidden = !lightOn;
+  $('enhFoot').hidden = !(bgMode || lightOn);
+  var note = $('enhNote');
+  if(bgMode === 2){
+    note.textContent = 'Fully white. Look at the edge of the hair before you print — fine ' +
+      'strands can get trimmed, and a visible cut line is its own rejection risk. Clean is ' +
+      'the safer setting of the two.';
+    note.hidden = false;
+  }else if(bgMode === 1){
+    note.textContent = 'Evens out the wall and takes the colour cast off it, without cutting ' +
+      'a hard edge around the hair.';
+    note.hidden = false;
+  }else note.hidden = true;
+}
+
+$('bgSeg').addEventListener('click', function(e){
+  var t = e.target.closest ? e.target.closest('.segBtn') : null;
+  if(!t) return;
+  bgMode = +t.getAttribute('data-bg');
+  syncEnhUI(); scheduleEnhance();
+});
+$('lightSeg').addEventListener('click', function(e){
+  var t = e.target.closest ? e.target.closest('.segBtn') : null;
+  if(!t) return;
+  lightOn = t.getAttribute('data-light') === '1';
+  syncEnhUI(); scheduleEnhance();
+});
+$('lightRange').oninput = function(){
+  lightAmt = parseFloat(this.value);
+  $('lightVal').textContent = Math.round(lightAmt * 100) + '%';
+  scheduleEnhance();
+};
+syncEnhUI();
+(function(){
+  var b = $('btnCompare');
+  var on = function(e){ e.preventDefault(); showOriginal = true; queuePaint(); };
+  var off = function(){ if(showOriginal){ showOriginal = false; queuePaint(); } };
+  b.addEventListener('pointerdown', on);
+  b.addEventListener('pointerup', off);
+  b.addEventListener('pointerleave', off);
+  b.addEventListener('pointercancel', off);
+})();
 
 /* ---------------- dragging ---------------- */
 function stageRect(){ return $('stage').getBoundingClientRect(); }
@@ -451,11 +898,18 @@ function bind(handleId, axis, set){
     ev.preventDefault(); el.setPointerCapture(ev.pointerId); firstDrag();
     var move = function(e){
       var r = stageRect();
+      /* A zero-size rect divides to NaN, and a NaN handle propagates all the way to
+         "Too close by NaN%" - a confident, meaningless verdict of exactly the kind
+         this app has already been burned by once. */
+      if(!r.width || !r.height) return;
       if(axis === 'y') set(Math.max(0, Math.min(natH, (e.clientY - r.top) / r.height * natH)));
       else             set(Math.max(0, Math.min(natW, (e.clientX - r.left) / r.width * natW)));
       render();
     };
-    var up = function(){ el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
+    var up = function(){
+      el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up);
+      scheduleEnhance();      // the matte and the exposure both key off the handles
+    };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
   });
 }
@@ -565,11 +1019,14 @@ var sheetURL = null, cropURL = null;
 
 function renderCrop(){
   var r = cropRect(headIn);
+  /* Run the passes once more at full resolution. #shot is showing a reduced-size copy
+     so the controls stay responsive, and cropping that would undo the 600 dpi export. */
+  var src = (bgMode || lightOn) ? applyPasses(natW, natH, r) : $('shot');
   var c = document.createElement('canvas'); c.width = PHOTO; c.height = PHOTO;
   var x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, PHOTO, PHOTO);
   x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
-  stepDraw(x, $('shot'), r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
+  stepDraw(x, src, r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
   return c;
 }
 function renderSheet(one){
@@ -609,6 +1066,7 @@ function stampDPI(blob, dpi, done){
 }
 
 function exportFail(err){
+  setBusy(false);
   $('exportErr').textContent = 'The sheet could not be built: ' +
     (err && err.message ? err.message : 'unknown error') + '. Try a different photo.';
   $('exportErr').hidden = false;
@@ -643,6 +1101,11 @@ function encode(c, ok){
 
 $('btnMake').onclick = function(){
   $('exportErr').hidden = true;
+  // the full-resolution pass blocks; let the busy state paint before it starts
+  setBusy(true);
+  setTimeout(runExport, 16);
+};
+function runExport(){
   try{
     var one = renderCrop(), sheet = renderSheet(one);
     if(looksBlank(sheet)) throw new Error('the sheet came back empty');
@@ -656,12 +1119,13 @@ $('btnMake').onclick = function(){
         $('cropImg').src = cropURL; $('sheetImg').src = sheetURL;
         $('sheetSpec').textContent = SHEET_W + '\u00d7' + SHEET_H + ' \u00b7 ' +
           (Math.round(sheetBlob.size / 104857.6) / 10) + ' MB';
+        setBusy(false);
         $('measureCard').hidden = true; $('exportCard').hidden = false;
         window.scrollTo(0, 0);
       });
     });
   }catch(err){ exportFail(err); }
-};
+}
 $('btnBack').onclick = function(){ $('exportCard').hidden = true; $('measureCard').hidden = false; };
 $('btnSave').onclick = function(){
   if(!sheetURL) return;

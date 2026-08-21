@@ -20,6 +20,22 @@ no upload, and no analytics.
 
 Open that URL in Safari on your phone, then Share → **Add to Home Screen**.
 
+## Cleaning up the photo
+
+Two optional controls on the measuring screen, both off unless you turn them on:
+
+- **Background — Clean / White.** Evens out the wall, takes the colour cast off it, and
+  pushes it toward white. *Clean* blends part of the way and leaves no hard edge around
+  the hair; *White* goes all the way. Clean is the safer of the two — check the hair
+  edge before printing a White one, because a visible cut line is its own rejection risk.
+- **Lighting — Auto.** White-balances off the background, sets the exposure from the
+  face rather than the whole frame, and evens out a side-lit face. The strength slider
+  backs it off if it goes too far.
+
+Both run entirely in the page, like everything else here, and both are applied before
+the crop, so the printed sheet gets them. *Hold to compare* shows the original while
+you hold it.
+
 ## Why the hosting matters
 
 The camera only works on a real top-level HTTPS page. Inside an embedded frame —
@@ -40,7 +56,7 @@ and Safari prompts for permission.
 
 ## Editing it later
 
-After changing any file, bump `CACHE` in `sw.js` (e.g. `passport-framer-v7`).
+After changing any file, bump `CACHE` in `sw.js` (e.g. `passport-framer-v8`).
 Otherwise phones that already installed it keep serving the cached copy and your
 change never appears.
 
