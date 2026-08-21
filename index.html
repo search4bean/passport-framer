@@ -1,0 +1,441 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Passport Photo Framer</title>
+<meta name="description" content="Measure, crop and tile US passport photos at 2x2 inches. Runs entirely on your device.">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0F1620">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<link rel="icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Passport">
+<style>
+  :root{
+    --ink:#0F1620; --ink2:#18212D; --rule:#27323F;
+    --paper:#FBFAF7; --paper2:#EFEDE7;
+    --amber:#F0A22E; --pass:#43AE72; --fail:#E2604C;
+    --mute:#7E8B9B; --text:#E8EDF3;
+    --mono:ui-monospace,"SF Mono",Menlo,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:var(--sans);
+       font-size:15px;line-height:1.5;
+       padding:env(safe-area-inset-top) env(safe-area-inset-right)
+               calc(40px + env(safe-area-inset-bottom)) env(safe-area-inset-left)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  .wrap{max-width:560px;margin:0 auto;padding:0 16px}
+
+  header{padding:22px 0 18px;border-bottom:1px solid var(--rule);margin-bottom:20px}
+  h1{margin:0;font-size:19px;font-weight:650;letter-spacing:-.02em}
+  .sub{font-family:var(--mono);font-size:11px;color:var(--mute);
+       letter-spacing:.09em;text-transform:uppercase;margin-top:5px}
+
+  .tabs{display:flex;gap:6px;margin-bottom:18px}
+  .tab{flex:1;padding:11px;background:var(--ink2);border:1px solid var(--rule);
+       color:var(--mute);font-family:var(--mono);font-size:11px;letter-spacing:.07em;
+       text-transform:uppercase;border-radius:7px;cursor:pointer}
+  .tab[aria-selected=true]{background:var(--amber);border-color:var(--amber);color:#241802;font-weight:600}
+  .tab:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+  .panel[hidden]{display:none}
+  .card{background:var(--ink2);border:1px solid var(--rule);border-radius:10px;padding:16px;margin-bottom:14px}
+
+  button.act{width:100%;padding:14px;border-radius:8px;border:0;cursor:pointer;
+       font-family:var(--sans);font-size:15px;font-weight:600}
+  .primary{background:var(--amber);color:#241802}
+  .ghost{background:transparent;border:1px solid var(--rule);color:var(--text)}
+  button.act+button.act{margin-top:9px}
+  button:disabled{opacity:.4;cursor:default}
+
+  /* ---- camera ---- */
+  #camWrap{position:relative;width:100%;aspect-ratio:1;background:#000;
+           border-radius:10px;overflow:hidden;margin-bottom:12px}
+  #cam{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  #camGuide{position:absolute;inset:0;width:100%;height:100%}
+
+  /* ---- measure stage ---- */
+  #stage{position:relative;width:100%;touch-action:none;border-radius:10px;
+         overflow:hidden;background:#000;user-select:none}
+  #shot{display:block;width:100%}
+  .line{position:absolute;left:0;right:0;height:0;border-top:2px dashed var(--amber);pointer-events:none}
+  .line.v{top:0;bottom:0;left:0;width:0;height:auto;border-top:0;
+          border-left:2px dashed rgba(240,162,46,.55)}
+  .grab{position:absolute;height:44px;margin-top:-22px;left:0;right:0;cursor:grab;touch-action:none}
+  .grab.v{top:0;bottom:0;left:0;width:44px;margin:0 0 0 -22px;height:auto}
+  .tag{position:absolute;left:8px;top:50%;transform:translateY(-50%);
+       background:var(--amber);color:#241802;font-family:var(--mono);font-size:10px;
+       font-weight:700;letter-spacing:.08em;padding:3px 7px;border-radius:4px}
+  .grab.v .tag{left:50%;top:12px;transform:translateX(-50%)}
+
+  /* ---- caliper (signature) ---- */
+  .cal{display:flex;gap:14px;align-items:stretch;margin-top:14px}
+  .calBar{position:relative;width:52px;flex:none;border-left:1px solid var(--rule)}
+  .calFill{position:absolute;left:0;right:0;border-radius:2px;transition:background .2s}
+  .calFill::before,.calFill::after{content:"";position:absolute;left:0;right:0;height:2px;background:currentColor}
+  .calFill::before{top:0}.calFill::after{bottom:0}
+  .calSpine{position:absolute;left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:currentColor;opacity:.5}
+  .calRead{flex:1;display:flex;flex-direction:column;justify-content:center}
+  .big{font-family:var(--mono);font-size:38px;font-weight:600;letter-spacing:-.03em;line-height:1}
+  .lbl{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);margin-bottom:6px}
+  .verdict{margin-top:10px;font-size:14px;line-height:1.45}
+
+  .spec{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+        color:var(--mute);padding-top:10px;margin-top:12px;border-top:1px solid var(--rule)}
+
+  .slider{width:100%;margin:6px 0 0;accent-color:var(--amber)}
+
+  /* ---- export ---- */
+  .paperCard{background:var(--paper);color:#1A1F26;border-radius:10px;padding:16px;margin-bottom:14px}
+  .paperCard .lbl{color:#6B7480}
+  #sheetImg,#cropImg{width:100%;display:block;border:1px solid var(--paper2);border-radius:6px;background:#fff}
+  #cropImg{max-width:180px;margin:0 auto}
+  .hint{font-size:13px;color:var(--mute);margin-top:10px}
+  .paperCard .hint{color:#5C6470}
+
+  .note{font-size:13px;color:var(--mute);margin-top:10px}
+  .err{color:var(--fail);font-size:13px;margin-top:10px}
+  input[type=file]{display:none}
+</style>
+
+<div class="wrap">
+<header>
+  <h1>Passport photo framer</h1>
+  <div class="sub">US · 2×2 in · head 1″–1⅜″</div>
+</header>
+
+<div class="tabs" role="tablist">
+  <button class="tab" role="tab" id="tabPhoto" aria-selected="true">Use a photo</button>
+  <button class="tab" role="tab" id="tabCam" aria-selected="false">Live camera</button>
+</div>
+
+<!-- ================= CAMERA ================= -->
+<div class="panel" id="panelCam" hidden>
+  <div id="camWrap"><video id="cam" playsinline muted autoplay></video><svg id="camGuide" viewBox="0 0 100 100" preserveAspectRatio="none"></svg></div>
+  <button class="act primary" id="btnStart">Start camera</button>
+  <button class="act primary" id="btnShoot" hidden>Take photo</button>
+  <button class="act ghost" id="btnFlip" hidden>Switch camera</button>
+  <p class="note">Fit the head inside the oval and put the eyes on the dashed line. Fill the frame this loosely on purpose — the guide already accounts for the margin the crop needs.</p>
+  <p class="err" id="camErr" hidden></p>
+</div>
+
+<!-- ================= PHOTO ================= -->
+<div class="panel" id="panelPhoto">
+  <div class="card" id="pickCard">
+    <button class="act primary" id="btnPick">Choose a photo</button>
+    <input type="file" id="file" accept="image/*">
+    <p class="note">Pick a shot from your library. Nothing leaves your phone — all of this runs in the page.</p>
+  </div>
+
+  <div id="measureCard" hidden>
+    <div class="card">
+      <div id="stage">
+        <img id="shot" alt="">
+        <div class="line" id="lineCrown"></div>
+        <div class="line" id="lineChin"></div>
+        <div class="line v" id="lineMid"></div>
+        <div class="grab" id="grabCrown"><span class="tag">TOP OF HEAD</span></div>
+        <div class="grab" id="grabChin"><span class="tag">CHIN</span></div>
+        <div class="grab v" id="grabMid"><span class="tag">MID</span></div>
+      </div>
+
+      <div class="cal">
+        <div class="calBar"><div class="calFill" id="calFill"><div class="calSpine"></div></div></div>
+        <div class="calRead">
+          <div class="lbl">Head height on a 2×2</div>
+          <div class="big" id="readNum">—</div>
+          <div class="verdict" id="verdict"></div>
+        </div>
+      </div>
+      <div class="spec"><span>min 1.000″</span><span>max 1.375″</span></div>
+    </div>
+
+    <div class="card" id="sizeCard" hidden>
+      <div class="lbl">Head size <span id="sizeVal"></span></div>
+      <input type="range" class="slider" id="sizeRange" min="1" max="1.375" step="0.005" value="1.125">
+      <p class="note">1⅛″ is the comfortable middle of the legal range. Only move this if you need to.</p>
+    </div>
+
+    <button class="act primary" id="btnMake" disabled>Make print sheet</button>
+    <button class="act ghost" id="btnOther">Choose a different photo</button>
+  </div>
+
+  <div id="exportCard" hidden>
+    <div class="paperCard">
+      <div class="lbl">Single photo · 600×600</div>
+      <img id="cropImg" alt="Cropped passport photo">
+    </div>
+    <div class="paperCard">
+      <div class="lbl">Print sheet · 6×4 in at 300 dpi</div>
+      <img id="sheetImg" alt="Six-up print sheet">
+      <p class="hint">Long-press the sheet to save it to Photos, then order it as a single 6×4 print at any drugstore or Costco kiosk. Cut along the guide lines. If the kiosk offers a crop choice, pick actual size rather than fill.</p>
+    </div>
+    <button class="act primary" id="btnSave">Download sheet</button>
+    <button class="act ghost" id="btnBack">Back to measuring</button>
+  </div>
+</div>
+
+  <p class="note" id="installHint" hidden style="text-align:center;padding:18px 0 0;border-top:1px solid var(--rule);margin-top:26px">
+    Tap Share, then <b>Add to Home Screen</b> to keep this on your phone. It works with no signal after the first visit.
+  </p>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// Geometry of a compliant 2x2. Chin sits 0.369 up from the bottom edge and the
+// crown 0.069 below the top edge when the head is 1.125" tall, which lands the
+// eyes inside the required 1.125"-1.375" band.
+var CHIN_FROM_BOTTOM = 0.369, MIN_HEAD = 1.0, MAX_HEAD = 1.375, DEFAULT_HEAD = 1.125;
+
+var $ = function(id){ return document.getElementById(id); };
+var img = new Image(), natW = 0, natH = 0;
+var crownY = 0, chinY = 0, midX = 0;      // natural pixel coords
+var headIn = DEFAULT_HEAD, fit = null;
+
+/* ---------------- tabs ---------------- */
+function show(which){
+  var cam = which === 'cam';
+  $('tabCam').setAttribute('aria-selected', cam);
+  $('tabPhoto').setAttribute('aria-selected', !cam);
+  $('panelCam').hidden = !cam;
+  $('panelPhoto').hidden = cam;
+  if(!cam) stopCam();
+}
+$('tabCam').onclick = function(){ show('cam'); };
+$('tabPhoto').onclick = function(){ show('photo'); };
+
+/* ---------------- camera ---------------- */
+var stream = null, facing = 'environment';
+
+function drawGuide(){
+  var top = 6.9, bottom = 100 - CHIN_FROM_BOTTOM * 100;   // 6.9 .. 63.1
+  var cy = (top + bottom) / 2, ry = (bottom - top) / 2, rx = 22;
+  var eye = 100 - 59.4;
+  $('camGuide').innerHTML =
+    '<rect x="0" y="0" width="100" height="100" fill="none" stroke="rgba(240,162,46,.35)" stroke-width="1"/>' +
+    '<ellipse cx="50" cy="' + cy + '" rx="' + rx + '" ry="' + ry + '" fill="none" ' +
+      'stroke="#F0A22E" stroke-width="0.9" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>' +
+    '<line x1="26" y1="' + eye + '" x2="74" y2="' + eye + '" stroke="#F0A22E" stroke-width="0.7" ' +
+      'stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>' +
+    '<text x="50" y="' + (eye - 2) + '" fill="#F0A22E" font-size="3.4" text-anchor="middle" ' +
+      'font-family="ui-monospace,monospace" letter-spacing="0.3">EYES</text>';
+}
+drawGuide();
+
+function stopCam(){
+  if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); stream = null; }
+  $('btnShoot').hidden = true; $('btnFlip').hidden = true; $('btnStart').hidden = false;
+}
+
+async function startCam(){
+  $('camErr').hidden = true;
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    return camFail('This browser will not hand the page a camera. Use the photo tab instead.');
+  }
+  try{
+    stopCam();
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode: facing, width:{ideal:1920}, height:{ideal:1920} }, audio:false
+    });
+    $('cam').srcObject = stream;
+    $('btnStart').hidden = true; $('btnShoot').hidden = false; $('btnFlip').hidden = false;
+  }catch(e){
+    camFail('The camera was blocked (' + (e && e.name ? e.name : 'error') +
+            '). This page is running inside a sandboxed frame, which Safari often will not grant camera access to. The photo tab does the same job.');
+  }
+}
+function camFail(msg){ $('camErr').textContent = msg; $('camErr').hidden = false; stopCam(); }
+
+$('btnStart').onclick = startCam;
+$('btnFlip').onclick = function(){ facing = facing === 'environment' ? 'user' : 'environment'; startCam(); };
+
+$('btnShoot').onclick = function(){
+  var v = $('cam');
+  var side = Math.min(v.videoWidth, v.videoHeight);
+  if(!side) return;
+  var c = document.createElement('canvas'); c.width = side; c.height = side;
+  c.getContext('2d').drawImage(v, (v.videoWidth - side) / 2, (v.videoHeight - side) / 2,
+                               side, side, 0, 0, side, side);
+  stopCam();
+  loadSrc(c.toDataURL('image/jpeg', 0.95));
+  show('photo');
+};
+
+/* ---------------- load a photo ---------------- */
+$('btnPick').onclick = function(){ $('file').click(); };
+$('btnOther').onclick = function(){ $('file').value = ''; $('file').click(); };
+$('file').onchange = function(e){
+  var f = e.target.files && e.target.files[0];
+  if(f) loadSrc(URL.createObjectURL(f));
+};
+
+function loadSrc(src){
+  img = new Image();
+  img.onload = function(){
+    natW = img.naturalWidth; natH = img.naturalHeight;
+    $('shot').src = src;
+    // opening guesses, deliberately loose
+    crownY = natH * 0.14; chinY = natH * 0.70; midX = natW * 0.5;
+    headIn = DEFAULT_HEAD; $('sizeRange').value = DEFAULT_HEAD;
+    $('pickCard').hidden = true; $('measureCard').hidden = false; $('exportCard').hidden = true;
+    render();
+  };
+  img.onerror = function(){
+    alert('That image would not decode. If it is a HEIC straight off the camera, open it in Photos and share it as a JPEG.');
+  };
+  img.src = src;
+}
+
+/* ---------------- dragging ---------------- */
+function stageRect(){ return $('stage').getBoundingClientRect(); }
+
+function bindV(handleId, set){
+  var el = $(handleId);
+  el.addEventListener('pointerdown', function(ev){
+    ev.preventDefault(); el.setPointerCapture(ev.pointerId);
+    var move = function(e){
+      var r = stageRect();
+      var y = (e.clientY - r.top) / r.height * natH;
+      set(Math.max(0, Math.min(natH, y)));
+      render();
+    };
+    var up = function(){ el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
+  });
+}
+function bindH(handleId, set){
+  var el = $(handleId);
+  el.addEventListener('pointerdown', function(ev){
+    ev.preventDefault(); el.setPointerCapture(ev.pointerId);
+    var move = function(e){
+      var r = stageRect();
+      var x = (e.clientX - r.left) / r.width * natW;
+      set(Math.max(0, Math.min(natW, x)));
+      render();
+    };
+    var up = function(){ el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); };
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up);
+  });
+}
+bindV('grabCrown', function(v){ crownY = Math.min(v, chinY - natH * 0.02); });
+bindV('grabChin',  function(v){ chinY  = Math.max(v, crownY + natH * 0.02); });
+bindH('grabMid',   function(v){ midX = v; });
+
+$('sizeRange').oninput = function(){ headIn = parseFloat(this.value); render(); };
+
+/* ---------------- the math ---------------- */
+function solve(){
+  var head = chinY - crownY;
+  if(head <= 0) return null;
+  // widest square crop that still holds the head in the right spot
+  var sideAvail = Math.min(
+    natW, natH,
+    2 * Math.min(midX, natW - midX),
+    chinY / (1 - CHIN_FROM_BOTTOM),
+    (natH - chinY) / CHIN_FROM_BOTTOM
+  );
+  var minHeadIn = 2 * head / sideAvail;      // smallest head this photo can reach
+  return { head: head, sideAvail: sideAvail, minHeadIn: minHeadIn, ok: minHeadIn <= MAX_HEAD };
+}
+
+function cropRect(hIn){
+  var side = 2 * (chinY - crownY) / hIn;
+  return { side: side, left: midX - side / 2, top: chinY - side * (1 - CHIN_FROM_BOTTOM) };
+}
+
+/* ---------------- render ---------------- */
+function pct(y){ return (y / natH * 100) + '%'; }
+
+function render(){
+  $('lineCrown').style.top = pct(crownY);
+  $('lineChin').style.top  = pct(chinY);
+  $('grabCrown').style.top = pct(crownY);
+  $('grabChin').style.top  = pct(chinY);
+  $('lineMid').style.left  = (midX / natW * 100) + '%';
+  $('grabMid').style.left  = (midX / natW * 100) + '%';
+
+  fit = solve();
+  var fill = $('calFill'), num = $('readNum'), ver = $('verdict');
+  if(!fit){ num.textContent = '—'; return; }
+
+  fill.style.top = pct(crownY);
+  fill.style.height = ((chinY - crownY) / natH * 100) + '%';
+
+  if(fit.ok){
+    $('sizeRange').min = Math.max(MIN_HEAD, fit.minHeadIn).toFixed(3);
+    if(headIn < fit.minHeadIn){ headIn = fit.minHeadIn; $('sizeRange').value = headIn; }
+    if(headIn > MAX_HEAD){ headIn = MAX_HEAD; $('sizeRange').value = headIn; }
+    num.textContent = headIn.toFixed(2) + '″';
+    fill.style.color = 'var(--pass)'; num.style.color = 'var(--pass)';
+    ver.innerHTML = 'In spec. This photo has the margin the crop needs.';
+    $('btnMake').disabled = false;
+    $('sizeCard').hidden = false;
+    $('sizeVal').textContent = headIn.toFixed(3) + '″';
+  }else{
+    num.textContent = fit.minHeadIn.toFixed(2) + '″';
+    fill.style.color = 'var(--fail)'; num.style.color = 'var(--fail)';
+    var over = Math.round((fit.minHeadIn / MAX_HEAD - 1) * 100);
+    ver.innerHTML = 'Too close by about <b>' + over + '%</b>. The best this photo can reach is ' +
+      fit.minHeadIn.toFixed(2) + '″, and the limit is 1.375″. Step back and reshoot — ' +
+      'frame from the top of the head down to the waist.';
+    $('btnMake').disabled = true;
+    $('sizeCard').hidden = true;
+  }
+}
+
+/* ---------------- export ---------------- */
+var DPI = 300, PHOTO = 2 * DPI, SHEET_W = 6 * DPI, SHEET_H = 4 * DPI;
+
+function renderCrop(){
+  var r = cropRect(headIn);
+  var c = document.createElement('canvas'); c.width = PHOTO; c.height = PHOTO;
+  var x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, PHOTO, PHOTO);
+  x.imageSmoothingQuality = 'high';
+  x.drawImage(img, r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
+  return c;
+}
+
+function renderSheet(one){
+  var c = document.createElement('canvas'); c.width = SHEET_W; c.height = SHEET_H;
+  var x = c.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, SHEET_W, SHEET_H);
+  for(var r = 0; r < 2; r++) for(var col = 0; col < 3; col++)
+    x.drawImage(one, col * PHOTO, r * PHOTO, PHOTO, PHOTO);
+  x.strokeStyle = 'rgba(0,0,0,.30)'; x.lineWidth = 2; x.setLineDash([12, 12]);
+  for(var i = 1; i < 3; i++){ x.beginPath(); x.moveTo(i * PHOTO, 0); x.lineTo(i * PHOTO, SHEET_H); x.stroke(); }
+  x.beginPath(); x.moveTo(0, PHOTO); x.lineTo(SHEET_W, PHOTO); x.stroke();
+  return c;
+}
+
+var sheetURL = null;
+$('btnMake').onclick = function(){
+  var one = renderCrop(), sheet = renderSheet(one);
+  $('cropImg').src = one.toDataURL('image/jpeg', 0.95);
+  sheetURL = sheet.toDataURL('image/jpeg', 0.95);
+  $('sheetImg').src = sheetURL;
+  $('measureCard').hidden = true; $('exportCard').hidden = false;
+  window.scrollTo(0, 0);
+};
+$('btnBack').onclick = function(){ $('exportCard').hidden = true; $('measureCard').hidden = false; };
+$('btnSave').onclick = function(){
+  if(!sheetURL) return;
+  var a = document.createElement('a');
+  a.href = sheetURL; a.download = 'passport-sheet-6x4.jpg';
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+/* ---------------- app shell ---------------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('./sw.js').catch(function(){ /* offline support is optional */ });
+  });
+}
+var standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+var iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+if(iOS && !standalone) $('installHint').hidden = false;
+})();
+</script>
