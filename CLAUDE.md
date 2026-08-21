@@ -83,7 +83,7 @@ attribute. Sandboxed previews (Claude artifacts, CodePen, etc.) don't, so the
 camera tab fails there and falls back with an explanatory message. On Pages it
 works normally.
 
-**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v5`.
+**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v6`.
 
 The app shell is served **network-first**, everything else cache-first. It was all
 cache-first, which made every redeploy land one launch late — the phone served the

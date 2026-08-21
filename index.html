@@ -620,9 +620,15 @@ function exportFail(err){
    on the face and is never pure white in a photo that actually drew. */
 function looksBlank(c){
   try{
-    var d = c.getContext('2d').getImageData(
-      Math.floor(c.width * 0.167), Math.floor(c.height * 0.25), 1, 1).data;
-    return d[3] === 0 || (d[0] === 255 && d[1] === 255 && d[2] === 255);
+    var x = c.getContext('2d');
+    // A grid across the first photo cell, not one pixel: a blown-out highlight can
+    // legitimately be pure white, and calling a good sheet empty is the worse error.
+    for(var gy = 1; gy <= 4; gy++) for(var gx = 1; gx <= 4; gx++){
+      var d = x.getImageData(Math.floor(c.width * gx / 15),
+                             Math.floor(c.height * gy / 10), 1, 1).data;
+      if(d[3] !== 0 && !(d[0] === 255 && d[1] === 255 && d[2] === 255)) return false;
+    }
+    return true;
   }catch(err){ return false; }
 }
 

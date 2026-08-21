@@ -40,7 +40,7 @@ and Safari prompts for permission.
 
 ## Editing it later
 
-After changing any file, bump `CACHE` in `sw.js` (e.g. `passport-framer-v6`).
+After changing any file, bump `CACHE` in `sw.js` (e.g. `passport-framer-v7`).
 Otherwise phones that already installed it keep serving the cached copy and your
 change never appears.
 
