@@ -47,8 +47,15 @@ frame's height. In practice, frame from the top of the head down to the waist.
 `index.html` is the entire app — markup, styles, logic, no dependencies, no build
 step. Deliberate: it has to work offline from a home-screen icon.
 
-Pipeline: photo → working canvas (capped at `MAX_EDGE = 2400`) → `#shot` canvas
-→ crop canvas (600×600) → sheet canvas (1800×1200) → JPEG data URL.
+Pipeline: photo → working canvas (bounded by `DECODE_RUNGS`) → `#shot` canvas
+→ crop canvas (1200×1200) → sheet canvas (3600×2400) → JPEG blob.
+
+Output is 600 dpi, not the 300 dpi minimum. Kiosks resample the upload onto their
+own print raster, and a file with no margin above the minimum goes soft in that
+second resample — which is exactly what a 300 dpi sheet came back looking like.
+`stepDraw()` halves repeatedly instead of letting one bilinear pass span a >2×
+downscale, and `stampDPI()` writes the real density into the JFIF APP0 header for
+kiosks that size from the header rather than the pixel count.
 
 Two entry points, one measuring screen:
 - **Live camera** — `getUserMedia`, square viewfinder, three guide lines at the
@@ -59,9 +66,16 @@ Two entry points, one measuring screen:
 
 **iOS canvas decode limit.** iPhone photos are ~24 MP, past what iOS will decode
 into a canvas. `drawImage` doesn't throw — it silently produces a blank canvas.
-Hence `MAX_EDGE`: every photo is redrawn once through a bounded working canvas,
+Hence `DECODE_RUNGS`: every photo is redrawn once through a bounded working canvas,
 and both the display and the crop read from that same canvas. This also removes
 any EXIF-rotation mismatch between what the `<img>` showed and what the canvas saw.
+
+The bound is on total **area** (12 Mpx), not just the long edge — a square 4096 px
+photo is 16.8 Mpx and over the limit while a 4096-wide 4:3 one is 12.6 Mpx and fine.
+`loadSrc` walks down the rungs whenever a decode returns blank, so the top rung can
+afford to be greedy. Keep it that way: pixels dropped here are detail the printed
+photo can never recover, and the old flat 2400 cap was throwing away ~64% of a
+12 MP phone photo before the crop even ran.
 
 **Camera needs a top-level HTTPS page.** Browsers block `getUserMedia` in
 cross-origin iframes unless the embedding page grants it via the `allow`
@@ -69,7 +83,7 @@ attribute. Sandboxed previews (Claude artifacts, CodePen, etc.) don't, so the
 camera tab fails there and falls back with an explanatory message. On Pages it
 works normally.
 
-**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v3`.
+**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v4`.
 Skip this and installed phones keep serving the stale copy — the change simply
 never appears, with no error.
 

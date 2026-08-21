@@ -220,11 +220,11 @@
 
   <div id="exportCard" hidden>
     <div class="paperCard">
-      <div class="lbl">Single photo · 600×600</div>
+      <div class="lbl">Single photo · 2×2 in at 600 dpi</div>
       <img id="cropImg" alt="Cropped passport photo">
     </div>
     <div class="paperCard">
-      <div class="lbl">Print sheet · 6×4 in at 300 dpi</div>
+      <div class="lbl">Print sheet · 6×4 in at 600 dpi · <span id="sheetSpec"></span></div>
       <img id="sheetImg" alt="Six-up print sheet">
       <p class="hint">Long-press the sheet to save it to Photos, then order it as a single 6×4 print at any drugstore or Costco kiosk. Cut along the guide lines. If the kiosk offers a crop choice, pick actual size rather than fill.</p>
     </div>
@@ -246,7 +246,18 @@
    bottom edge, which puts the eyes inside the required 1.125"-1.375" band for any
    head in the legal 1"-1.375" size range. */
 var CHIN_FROM_BOTTOM = 0.369, MIN_HEAD = 1.0, MAX_HEAD = 1.375, DEFAULT_HEAD = 1.125;
-var MAX_EDGE = 2400;   // iOS refuses to decode very large photos into a canvas
+/* iOS silently yields a blank canvas rather than throwing once a photo is too large
+   to decode, so every photo is redrawn through a bounded working canvas. The cap is
+   on total area, not just the long edge: a square 4096 photo is 16.8 Mpx and over the
+   limit, while a 4096-wide 4:3 one is 12.6 Mpx and fine. loadSrc walks down these
+   rungs whenever a decode comes back empty, so the first is free to be greedy - and
+   being greedy is the point, since every pixel dropped here is detail the printed
+   photo can never get back. */
+var DECODE_RUNGS = [
+  { edge: 4096, area: 12e6 },
+  { edge: 3200, area:  8e6 },
+  { edge: 2400, area: 4.4e6 }
+];
 
 var $ = function(id){ return document.getElementById(id); };
 var base = null, img = null, natW = 0, natH = 0;
@@ -327,22 +338,46 @@ $('file').onchange = function(e){
   if(f) loadSrc(URL.createObjectURL(f));
 };
 
+/* Browsers downscale in a single bilinear pass, which starts skipping source pixels -
+   and visibly softening the result - once the ratio passes 2x. Halving repeatedly
+   keeps that detail. Under 2x the loop never runs and this is a plain drawImage. */
+function stepDraw(x, src, sx, sy, sw, sh, dx, dy, dw, dh){
+  var cur = src, cx = sx, cy = sy, cw = sw, ch = sh;
+  while(cw > dw * 2 && ch > dh * 2){
+    var nw = Math.max(dw, Math.round(cw / 2)), nh = Math.max(dh, Math.round(ch / 2));
+    var t = document.createElement('canvas'); t.width = nw; t.height = nh;
+    var tx = t.getContext('2d');
+    tx.imageSmoothingEnabled = true; tx.imageSmoothingQuality = 'high';
+    tx.drawImage(cur, cx, cy, cw, ch, 0, 0, nw, nh);
+    cur = t; cx = 0; cy = 0; cw = nw; ch = nh;
+  }
+  x.drawImage(cur, cx, cy, cw, ch, dx, dy, dw, dh);
+}
+
+function decodeAt(raw, w, h, rung){
+  var k = Math.min(1, rung.edge / Math.max(w, h), Math.sqrt(rung.area / (w * h)));
+  var c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+  var cx = c.getContext('2d');
+  cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+  stepDraw(cx, raw, 0, 0, w, h, 0, 0, c.width, c.height);
+  try{
+    var px = cx.getImageData(Math.floor(c.width/2), Math.floor(c.height/2), 1, 1).data;
+    if(px[3] === 0) return null;          // the silent iOS failure - drop to a smaller rung
+  }catch(err){ /* unreadable, not fatal; assume it drew */ }
+  return c;
+}
+
 function loadSrc(src){
   var raw = new Image();
   raw.onload = function(){
     var w = raw.naturalWidth, h = raw.naturalHeight;
     if(!w || !h) return failLoad('That image reported no dimensions.');
-    var k = Math.min(1, MAX_EDGE / Math.max(w, h));
-    var c = document.createElement('canvas');
-    c.width = Math.round(w * k); c.height = Math.round(h * k);
-    var cx = c.getContext('2d');
-    cx.imageSmoothingQuality = 'high';
-    cx.drawImage(raw, 0, 0, c.width, c.height);
-    try{
-      var px = cx.getImageData(Math.floor(c.width/2), Math.floor(c.height/2), 1, 1).data;
-      if(px[3] === 0) return failLoad('This photo would not render. Open it in Photos, tap Edit, save, and try that copy.');
-    }catch(err){ /* not fatal */ }
-    adopt(c);
+    for(var i = 0; i < DECODE_RUNGS.length; i++){
+      var c = decodeAt(raw, w, h, DECODE_RUNGS[i]);
+      if(c) return adopt(c);
+    }
+    failLoad('This photo would not render. Open it in Photos, tap Edit, save, and try that copy.');
   };
   raw.onerror = function(){
     failLoad('That image would not decode. If it is a HEIC straight off the camera, open it in Photos and share it as a JPEG.');
@@ -519,49 +554,113 @@ function drawPreview(){
 clearPreview();
 
 /* ---------------- export ---------------- */
-var DPI = 300, PHOTO = 2 * DPI, SHEET_W = 6 * DPI, SHEET_H = 4 * DPI, sheetURL = null;
+/* 600 dpi rather than the 300 dpi minimum. A kiosk resamples the upload onto its own
+   print raster, and that second resample is what turns a merely adequate 300 dpi file
+   soft - there is no margin in it to lose. Twice the linear resolution leaves detail
+   to spare, and 3600x2400 is still only 8.6 Mpx, well inside what kiosks accept. */
+var DPI = 600, PHOTO = 2 * DPI, SHEET_W = 6 * DPI, SHEET_H = 4 * DPI;
+var GUIDE = DPI / 300;          // cut-line weights below were drawn against 300 dpi
+var JPEG_Q = 0.97;              // this file gets re-encoded downstream; leave headroom
+var sheetURL = null, cropURL = null;
 
 function renderCrop(){
   var r = cropRect(headIn);
   var c = document.createElement('canvas'); c.width = PHOTO; c.height = PHOTO;
   var x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, PHOTO, PHOTO);
-  x.imageSmoothingQuality = 'high';
-  x.drawImage($('shot'), r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
+  stepDraw(x, $('shot'), r.left, r.top, r.side, r.side, 0, 0, PHOTO, PHOTO);
   return c;
 }
 function renderSheet(one){
   var c = document.createElement('canvas'); c.width = SHEET_W; c.height = SHEET_H;
   var x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, SHEET_W, SHEET_H);
+  x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high';
   for(var r = 0; r < 2; r++) for(var col = 0; col < 3; col++)
     x.drawImage(one, col * PHOTO, r * PHOTO, PHOTO, PHOTO);
-  x.strokeStyle = 'rgba(0,0,0,.30)'; x.lineWidth = 2; x.setLineDash([12, 12]);
+  x.strokeStyle = 'rgba(0,0,0,.30)'; x.lineWidth = 2 * GUIDE;
+  x.setLineDash([12 * GUIDE, 12 * GUIDE]);
   for(var i = 1; i < 3; i++){ x.beginPath(); x.moveTo(i * PHOTO, 0); x.lineTo(i * PHOTO, SHEET_H); x.stroke(); }
   x.beginPath(); x.moveTo(0, PHOTO); x.lineTo(SHEET_W, PHOTO); x.stroke();
   return c;
 }
+
+/* Canvas writes a JFIF header with no density recorded, so a kiosk that sizes from
+   the header rather than the pixel count has to guess. Stamp the real dpi into APP0;
+   anything unexpected in the header leaves the blob untouched. */
+function stampDPI(blob, dpi, done){
+  var fr = new FileReader();
+  fr.onload = function(){
+    try{
+      var b = new Uint8Array(fr.result);
+      if(b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF && b[3] === 0xE0 &&
+         b[6] === 0x4A && b[7] === 0x46 && b[8] === 0x49 && b[9] === 0x46 && b[10] === 0){
+        b[13] = 1;                                 // density units: dots per inch
+        b[14] = dpi >> 8; b[15] = dpi & 255;       // x density
+        b[16] = dpi >> 8; b[17] = dpi & 255;       // y density
+        return done(new Blob([b], { type: 'image/jpeg' }));
+      }
+    }catch(err){ /* fall through and ship it unstamped */ }
+    done(blob);
+  };
+  fr.onerror = function(){ done(blob); };
+  fr.readAsArrayBuffer(blob);
+}
+
+function exportFail(err){
+  $('exportErr').textContent = 'The sheet could not be built: ' +
+    (err && err.message ? err.message : 'unknown error') + '. Try a different photo.';
+  $('exportErr').hidden = false;
+}
+
+/* A blank canvas still encodes to a perfectly valid file - and a white one compresses
+   small but not to nothing - so the old byte-count test could not tell a real sheet
+   from an empty one. Sample the middle of the first photo cell instead, which lands
+   on the face and is never pure white in a photo that actually drew. */
+function looksBlank(c){
+  try{
+    var d = c.getContext('2d').getImageData(
+      Math.floor(c.width * 0.167), Math.floor(c.height * 0.25), 1, 1).data;
+    return d[3] === 0 || (d[0] === 255 && d[1] === 255 && d[2] === 255);
+  }catch(err){ return false; }
+}
+
+function encode(c, ok){
+  try{
+    c.toBlob(function(b){
+      if(!b || b.size < 2000) return exportFail(new Error('the encoder returned nothing'));
+      stampDPI(b, DPI, ok);
+    }, 'image/jpeg', JPEG_Q);
+  }catch(err){ exportFail(err); }
+}
+
 $('btnMake').onclick = function(){
   $('exportErr').hidden = true;
   try{
     var one = renderCrop(), sheet = renderSheet(one);
-    var cropURL = one.toDataURL('image/jpeg', 0.95);
-    sheetURL = sheet.toDataURL('image/jpeg', 0.95);
-    if(!sheetURL || sheetURL.length < 2000) throw new Error('the sheet came back empty');
-    $('cropImg').src = cropURL; $('sheetImg').src = sheetURL;
-    $('measureCard').hidden = true; $('exportCard').hidden = false;
-    window.scrollTo(0, 0);
-  }catch(err){
-    $('exportErr').textContent = 'The sheet could not be built: ' +
-      (err && err.message ? err.message : 'unknown error') + '. Try a different photo.';
-    $('exportErr').hidden = false;
-  }
+    if(looksBlank(sheet)) throw new Error('the sheet came back empty');
+    if(cropURL) URL.revokeObjectURL(cropURL);
+    if(sheetURL) URL.revokeObjectURL(sheetURL);
+    cropURL = sheetURL = null;
+    encode(one, function(cropBlob){
+      encode(sheet, function(sheetBlob){
+        cropURL = URL.createObjectURL(cropBlob);
+        sheetURL = URL.createObjectURL(sheetBlob);
+        $('cropImg').src = cropURL; $('sheetImg').src = sheetURL;
+        $('sheetSpec').textContent = SHEET_W + '\u00d7' + SHEET_H + ' \u00b7 ' +
+          (Math.round(sheetBlob.size / 104857.6) / 10) + ' MB';
+        $('measureCard').hidden = true; $('exportCard').hidden = false;
+        window.scrollTo(0, 0);
+      });
+    });
+  }catch(err){ exportFail(err); }
 };
 $('btnBack').onclick = function(){ $('exportCard').hidden = true; $('measureCard').hidden = false; };
 $('btnSave').onclick = function(){
   if(!sheetURL) return;
   var a = document.createElement('a');
-  a.href = sheetURL; a.download = 'passport-sheet-6x4.jpg';
+  a.href = sheetURL; a.download = 'passport-sheet-6x4-600dpi.jpg';
   document.body.appendChild(a); a.click(); a.remove();
 };
 
