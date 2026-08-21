@@ -83,7 +83,18 @@ attribute. Sandboxed previews (Claude artifacts, CodePen, etc.) don't, so the
 camera tab fails there and falls back with an explanatory message. On Pages it
 works normally.
 
-**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v4`.
+**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v5`.
+
+The app shell is served **network-first**, everything else cache-first. It was all
+cache-first, which made every redeploy land one launch late — the phone served the
+previous copy, quietly folded the new one into the cache behind it, and the change
+only showed up the next time the app was opened. That is indistinguishable from the
+change not working, and it burned a real debugging cycle. Network-first falls back
+to cache on failure and after a 3 s timeout, so offline still works.
+
+Note this does not rescue the launch *immediately* after a deploy from an older
+cache-first worker: that one still serves stale, because the old worker answers
+before the new one takes over. Bumping `CACHE` is still required.
 Skip this and installed phones keep serving the stale copy — the change simply
 never appears, with no error.
 
