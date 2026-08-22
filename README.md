@@ -31,6 +31,11 @@ Two optional controls on the measuring screen, both off unless you turn them on:
 - **Lighting — Auto.** White-balances off the background, sets the exposure from the
   face rather than the whole frame, and evens out a side-lit face. The strength slider
   backs it off if it goes too far.
+- **Shadows — Soft / Strong.** Lifts a shadow cast on the wall behind the head and
+  shadows on the face itself, leaving hair, eyebrows and dark clothing where they are.
+  A shadow on the background is one of the commoner reasons a photo comes back. *Soft*
+  is the safer setting; *Strong* clears a heavy cast shadow but can start to flatten
+  the face, so if it looks waxy, drop back.
 
 Both run entirely in the page, like everything else here, and both are applied before
 the crop, so the printed sheet gets them. *Hold to compare* shows the original while
@@ -56,7 +61,7 @@ and Safari prompts for permission.
 
 ## Editing it later
 
-After changing any file, bump `CACHE` in `sw.js` (e.g. `passport-framer-v8`).
+After changing any file, bump `CACHE` in `sw.js` (e.g. `passport-framer-v9`).
 Otherwise phones that already installed it keep serving the cached copy and your
 change never appears.
 

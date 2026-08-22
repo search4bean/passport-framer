@@ -238,6 +238,14 @@
                  aria-label="Lighting strength">
           <span class="val" id="lightVal">70%</span>
         </div>
+        <div class="enhRow">
+          <span class="enhLbl">Shadows</span>
+          <div class="seg" id="shadowSeg" role="group" aria-label="Shadow removal">
+            <button type="button" class="segBtn" data-shadow="0" aria-pressed="true">Off</button>
+            <button type="button" class="segBtn" data-shadow="1" aria-pressed="false">Soft</button>
+            <button type="button" class="segBtn" data-shadow="2" aria-pressed="false">Strong</button>
+          </div>
+        </div>
         <p class="enhNote" id="enhNote" hidden></p>
         <div class="enhFoot" id="enhFoot" hidden>
           <button type="button" class="mini" id="btnCompare">Hold to compare</button>
@@ -512,6 +520,8 @@ $('rotReset').onclick = function(){
 var MASK_EDGE = 320;        // the matte is soft and upsampled; it does not need to be big
 var bgMode = 0;             // 0 off, 1 clean, 2 white
 var lightOn = false, lightAmt = 0.7;
+var shadowMode = 0;         // 0 off, 1 soft, 2 strong
+var SHADOW_AMT = [0, 0.55, 1.0];
 var enhanced = null;        // base with the passes applied, or null when both are off
 var analysis = null;        // per-photo stats; survives handle drags, dies with the photo
 var enhTimer = null, showOriginal = false;
@@ -663,6 +673,135 @@ function bgMask(a){
   return boxBlur(score, w, h, 2);          // feather, so no hard line appears anywhere
 }
 
+/* The chromaticity of lit skin on this particular face, taken from the brighter part of
+   the head. Shadowed skin keeps that chromaticity at a lower level; hair, brows, pupils
+   and clothing do not. Deriving it from the photo rather than assuming a value is what
+   makes the shadow lift behave the same across skin tones - there is no fixed idea of
+   "too dark" anywhere in it. */
+function litSkinChroma(a){
+  var k = a.w / natW;
+  var cxp = midX * k, cyp = (crownY + chinY) / 2 * k;
+  var ry = (chinY - crownY) / 2 * k, rx = (chinY - crownY) * 0.34 * k;
+  var lum = [], idx = [], d = a.data, x, y, nx, ny, i, L;
+  for(y = Math.max(0, Math.floor(cyp - ry)); y < Math.min(a.h, cyp + ry); y++)
+    for(x = Math.max(0, Math.floor(cxp - rx)); x < Math.min(a.w, cxp + rx); x++){
+      nx = (x - cxp) / rx; ny = (y - cyp) / ry;
+      if(nx * nx + ny * ny > 1) continue;
+      i = (y * a.w + x) * 4;
+      lum.push(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+      idx.push(i);
+    }
+  if(lum.length < 24) return null;
+  var cut = lum.slice().sort(function(p, q){ return p - q; })[Math.floor(lum.length * 0.6)];
+  var rs = [], gs = [], bs = [], j, LL;
+  for(j = 0; j < idx.length; j++){
+    if(lum[j] < cut) continue;              // brighter 40% only: that is the lit skin
+    i = idx[j]; LL = lum[j] + 1e-6;
+    rs.push(d[i] / LL); gs.push(d[i + 1] / LL); bs.push(d[i + 2] / LL);
+  }
+  if(rs.length < 8) return null;
+  var lit = [];
+  for(j = 0; j < lum.length; j++) if(lum[j] >= cut) lit.push(lum[j]);
+  return { r: median(rs), g: median(gs), b: median(bs), L: median(lit) || 1 };
+}
+
+/* Shadows are found by comparing two blur scales rather than against any threshold.
+   The small one takes the shape of a shadow - under a jaw, beside a nose, cast on the
+   wall - while staying well above the size of an eyebrow or a nostril, so features never
+   register as shadow. The large one is the ambient level to measure it against. An
+   evenly lit face has the two agreeing at every point no matter how dark the skin, which
+   is precisely why this does not need to know what "dark" means. */
+function shadowField(a){
+  var w = a.w, h = a.h, d = a.data, n = w * h, p, i, r, g, b, Lp;
+  var L = new Float32Array(n);
+  var wallW = new Float32Array(n), skinW = new Float32Array(n);
+
+  /* Measure against the two levels this photo has already told us about - the wall's own
+     lit colour and the face's own lit level - rather than against a second, larger blur.
+     A blur-versus-blur comparison silently misses any shadow bigger than the blur, and a
+     cast shadow across the wall behind the head is enormous. Both references come from
+     this photo, so nothing here assumes a skin tone. */
+  var B = a.bg, BL = 0.299 * B.r + 0.587 * B.g + 0.114 * B.b + 1e-6;
+  var br = B.r / BL, bgc = B.g / BL, bb = B.b / BL;
+  var skin = litSkinChroma(a);
+  var sr = 0, sg = 0, sb = 0, sL = 0;
+  if(skin){ sr = skin.r; sg = skin.g; sb = skin.b; sL = skin.L + 1e-6; }
+
+  /* Weight per surface: right hue for it, and not so far below its lit level that it has
+     to be an object rather than a shadow of it. The level test is what separates shadowed
+     skin from hair, which hue alone cannot - brown hair and skin can share a chromaticity
+     almost exactly. */
+  for(p = 0; p < n; p++){
+    i = p * 4;
+    r = d[i]; g = d[i + 1]; b = d[i + 2];
+    Lp = 0.299 * r + 0.587 * g + 0.114 * b + 1e-6;
+    L[p] = Lp;
+    wallW[p] = smoothStep(0.30, 0.10,
+                 Math.abs(r / Lp - br) + Math.abs(g / Lp - bgc) + Math.abs(b / Lp - bb)) *
+               smoothStep(0.28, 0.55, Lp / BL);
+    if(skin) skinW[p] = smoothStep(0.26, 0.08,
+                          Math.abs(r / Lp - sr) + Math.abs(g / Lp - sg) + Math.abs(b / Lp - sb)) *
+                        smoothStep(0.22, 0.48, Lp / sL);
+  }
+
+  /* Each surface's local level is averaged over that surface only - a plain blur here
+     lets dark hair drag down the estimate of the wall beside it, so the wall next to the
+     head gets lifted hardest and the subject ends up wearing a white halo. Blurring the
+     weighted values and the weights together and dividing keeps every surface's estimate
+     built from its own pixels. */
+  var R = Math.max(2, Math.round(Math.min(w, h) * 0.055));
+  var wlNum = new Float32Array(n), skNum = new Float32Array(n);
+  for(p = 0; p < n; p++){ wlNum[p] = L[p] * wallW[p]; skNum[p] = L[p] * skinW[p]; }
+  wlNum = boxBlur(wlNum, w, h, R);
+  skNum = boxBlur(skNum, w, h, R);
+  var wlDen = boxBlur(wallW, w, h, R), skDen = boxBlur(skinW, w, h, R);
+
+  /* The magnitude comes from the neighbourhood, so a dark feature is never lifted on its
+     own account - but it is then capped so no pixel can be lifted past the lit level it
+     is being measured against. Without that cap a pixel sitting at full brightness inside
+     a shadow's soft edge still gets the neighbourhood's lift and blows past white, which
+     is a halo again, just drawn around the shadow instead of around the head. The cap
+     only ever binds on pixels brighter than their surroundings, so features - which are
+     darker - keep taking the neighbourhood value and keep their contrast. */
+  var out = new Float32Array(n), ceil = new Float32Array(n), lvl, sh, cap, best, top;
+  for(p = 0; p < n; p++){
+    best = 0; top = 0;
+    if(wallW[p] > 0.01 && wlDen[p] > 0.03){
+      lvl = wlNum[p] / wlDen[p];
+      sh = BL / (lvl < 1 ? 1 : lvl) - 1;
+      cap = BL / L[p] - 1;
+      if(cap < 0) cap = 0;
+      if(cap < sh) sh = cap;
+      if(sh > 0) best = (sh > 1.1 ? 1.1 : sh) * wallW[p];
+      top = cap;
+    }
+    if(skin && skinW[p] > 0.01 && skDen[p] > 0.03){
+      lvl = skNum[p] / skDen[p];
+      sh = sL / (lvl < 1 ? 1 : lvl) - 1;
+      cap = sL / L[p] - 1;
+      if(cap < 0) cap = 0;
+      if(cap < sh) sh = cap;
+      if(sh > 0){
+        sh = (sh > 1.1 ? 1.1 : sh) * skinW[p];
+        if(sh > best) best = sh;
+      }
+      if(cap > top) top = cap;
+    }
+    out[p] = best;
+    ceil[p] = top;
+  }
+
+  /* Feather first, then re-apply the ceiling. Feathering is what stops a lifted patch
+     having an edge, but it also smears lift onto pixels that were capped to nothing -
+     which is how a bright rim survives around the shadow even after the cap. Clamping
+     after the blur keeps both properties: no edge, and nothing driven past its own lit
+     level. The ceiling falls to zero as a pixel approaches that level, so clamping
+     against it cannot introduce an edge of its own. */
+  out = boxBlur(out, w, h, 2);
+  for(p = 0; p < n; p++) if(out[p] > ceil[p]) out[p] = ceil[p];
+  return out;
+}
+
 /* A heavily blurred luminance map is a serviceable estimate of how the light fell.
    Dividing by it flattens a side-lit face. Done gently: taken far it also flattens
    the face itself, and a mask-flat portrait looks worse than a slightly uneven one. */
@@ -693,7 +832,7 @@ function toneLUTs(a){
   for(v = 0; v < 256; v++) for(ch = 0; ch < 3; ch++){
     sv = Math.min(255, v * gain[ch]) / 255;
     sv = Math.pow(sv, gamma);
-    sv = 1 - Math.pow(1 - sv, 1.3);          // lift shadows, leave the highlights put
+    sv = 1 - Math.pow(1 - sv, shadowMode ? 1.1 : 1.3);   // lift shadows, leave highlights put
     sv = (sv - 0.5) * 1.06 + 0.5;            // hand back a little of the contrast
     sv = sv < 0 ? 0 : sv > 1 ? 1 : sv;
     sv = v + (sv * 255 - v) * lightAmt;      // fold the slider in, so it is predictable
@@ -713,7 +852,7 @@ function applyPasses(w, h, clip){
   c.width = w; c.height = h;
   var x = c.getContext('2d');
   drawBase(x, w, h);
-  if(!bgMode && !lightOn) return c;
+  if(!bgMode && !lightOn && !shadowMode) return c;
 
   var a = analysis || (analysis = analyse());
 
@@ -740,8 +879,11 @@ function applyPasses(w, h, clip){
     field = illumField(a);
     for(q = 0; q < field.length; q++) fieldMean += field[q];
     fieldMean /= field.length;
-    flatten = 0.35 * lightAmt;
+    // the shadow pass does this job better and gated; do not have both at full weight
+    flatten = 0.35 * lightAmt * (shadowMode ? 0.35 : 1);
   }
+  var shade = shadowMode ? shadowField(a) : null;
+  var shAmt = SHADOW_AMT[shadowMode] || 0;
   var mask = bgMode ? bgMask(a) : null;
   var bgAmt = bgMode === 2 ? 1 : 0.78;
 
@@ -757,7 +899,8 @@ function applyPasses(w, h, clip){
      difference between this feeling instant and taking three seconds. */
   var mRow = mask ? new Float32Array(bw) : null;
   var fRow = field ? new Float32Array(bw) : null;
-  var y, fy, y0, ty, r0, r1, i, r, g, b, m, kk, t, aTop, aBot;
+  var sRow = shade ? new Float32Array(bw) : null;
+  var y, fy, y0, ty, r0, r1, i, r, g, b, m, kk, t, aTop, aBot, lf;
 
   for(y = 0; y < bh; y++){
     fy = (y + by0) * sy; y0 = fy | 0;
@@ -776,12 +919,31 @@ function applyPasses(w, h, clip){
       aBot = field[r1 + x0] + (field[r1 + x0 + 1] - field[r1 + x0]) * t;
       fRow[xc] = aTop + (aBot - aTop) * ty;
     }
+    if(sRow) for(xc = 0; xc < bw; xc++){
+      x0 = colX0[xc]; t = colTx[xc];
+      aTop = shade[r0 + x0] + (shade[r0 + x0 + 1] - shade[r0 + x0]) * t;
+      aBot = shade[r1 + x0] + (shade[r1 + x0 + 1] - shade[r1 + x0]) * t;
+      sRow[xc] = aTop + (aBot - aTop) * ty;
+    }
 
     i = y * bw * 4;
     for(xc = 0; xc < bw; xc++, i += 4){
       r = d[i]; g = d[i + 1]; b = d[i + 2];
+      if(sRow){
+        /* Multiply, so a whole shadowed neighbourhood is scaled by one factor and the
+           detail inside it keeps its relative contrast - an eyebrow in shadow comes up
+           with the skin around it instead of being smeared into it. This runs before
+           the tone curve: the lift is measured from the original pixels, so applying it
+           to already-curved ones counts the same correction twice and overshoots. */
+        lf = 1 + shAmt * sRow[xc];
+        if(lf > 1.002){
+          r *= lf; if(r > 255) r = 255;
+          g *= lf; if(g > 255) g = 255;
+          b *= lf; if(b > 255) b = 255;
+        }
+      }
       if(luts){
-        r = lut0[r]; g = lut1[g]; b = lut2[b];
+        r = lut0[r | 0]; g = lut1[g | 0]; b = lut2[b | 0];
         t = fRow[xc];
         kk = 1 + flatten * (fieldMean / (t < 8 ? 8 : t) - 1);
         if(kk < 0.75) kk = 0.75; else if(kk > 1.45) kk = 1.45;
@@ -801,7 +963,7 @@ function applyPasses(w, h, clip){
 }
 
 function rebuildEnhanced(){
-  if(!base || (!bgMode && !lightOn)){ enhanced = null; return; }
+  if(!base || (!bgMode && !lightOn && !shadowMode)){ enhanced = null; return; }
   var k = Math.min(1, PREVIEW_EDGE / Math.max(natW, natH));
   enhanced = applyPasses(Math.max(1, Math.round(natW * k)),
                          Math.max(1, Math.round(natH * k)));
@@ -812,7 +974,7 @@ function setBusy(on){ $('enhBusy').hidden = !on; }
 function scheduleEnhance(){
   if(enhTimer){ clearTimeout(enhTimer); enhTimer = null; }
   if(!base) return;
-  if(!bgMode && !lightOn){ enhanced = null; setBusy(false); queuePaint(); return; }
+  if(!bgMode && !lightOn && !shadowMode){ enhanced = null; setBusy(false); queuePaint(); return; }
   analysis = null;          // the straighten transform feeds it; never reuse across a change
   setBusy(true);
   enhTimer = setTimeout(function(){
@@ -841,19 +1003,33 @@ function syncEnhUI(){
     el = ls[i];
     el.setAttribute('aria-pressed', String((el.getAttribute('data-light') === '1') === lightOn));
   }
+  var ss = $('shadowSeg').getElementsByClassName('segBtn');
+  for(i = 0; i < ss.length; i++){
+    el = ss[i];
+    el.setAttribute('aria-pressed', String(+el.getAttribute('data-shadow') === shadowMode));
+  }
   $('lightAmtRow').hidden = !lightOn;
-  $('enhFoot').hidden = !(bgMode || lightOn);
-  var note = $('enhNote');
+  $('enhFoot').hidden = !(bgMode || lightOn || shadowMode);
+
+  var notes = [];
   if(bgMode === 2){
-    note.textContent = 'Fully white. Look at the edge of the hair before you print — fine ' +
-      'strands can get trimmed, and a visible cut line is its own rejection risk. Clean is ' +
-      'the safer setting of the two.';
-    note.hidden = false;
+    notes.push('Background is fully white. Look at the edge of the hair before you print — ' +
+      'fine strands can get trimmed, and a visible cut line is its own rejection risk. ' +
+      'Clean is the safer of the two.');
   }else if(bgMode === 1){
-    note.textContent = 'Evens out the wall and takes the colour cast off it, without cutting ' +
-      'a hard edge around the hair.';
-    note.hidden = false;
-  }else note.hidden = true;
+    notes.push('Background evened out and the colour cast taken off it, without cutting a ' +
+      'hard edge around the hair.');
+  }
+  if(shadowMode === 2){
+    notes.push('Strong lifts a heavy cast shadow but can start to flatten the face. If it ' +
+      'looks waxy, drop to Soft.');
+  }else if(shadowMode === 1){
+    notes.push('Lifts shadows on the face and on the wall behind the head, leaving hair and ' +
+      'features alone.');
+  }
+  var note = $('enhNote');
+  note.textContent = notes.join(' ');
+  note.hidden = !notes.length;
 }
 
 $('bgSeg').addEventListener('click', function(e){
@@ -866,6 +1042,12 @@ $('lightSeg').addEventListener('click', function(e){
   var t = e.target.closest ? e.target.closest('.segBtn') : null;
   if(!t) return;
   lightOn = t.getAttribute('data-light') === '1';
+  syncEnhUI(); scheduleEnhance();
+});
+$('shadowSeg').addEventListener('click', function(e){
+  var t = e.target.closest ? e.target.closest('.segBtn') : null;
+  if(!t) return;
+  shadowMode = +t.getAttribute('data-shadow');
   syncEnhUI(); scheduleEnhance();
 });
 $('lightRange').oninput = function(){
@@ -1021,7 +1203,7 @@ function renderCrop(){
   var r = cropRect(headIn);
   /* Run the passes once more at full resolution. #shot is showing a reduced-size copy
      so the controls stay responsive, and cropping that would undo the 600 dpi export. */
-  var src = (bgMode || lightOn) ? applyPasses(natW, natH, r) : $('shot');
+  var src = (bgMode || lightOn || shadowMode) ? applyPasses(natW, natH, r) : $('shot');
   var c = document.createElement('canvas'); c.width = PHOTO; c.height = PHOTO;
   var x = c.getContext('2d');
   x.fillStyle = '#fff'; x.fillRect(0, 0, PHOTO, PHOTO);

@@ -95,6 +95,41 @@ Measured on a deliberately bad frame (cool cast, wall falling off across the fra
 underexposed side-lit subject): face 87 → 144, colour cast 22 → 6, wall unevenness
 34 → 15 on lighting alone; wall unevenness → 0 and cast → 0 on White.
 
+**Shadows** (`shadowField`) is the third pass, and the one with the most ways to go
+wrong. It measures a shadow's depth against the two lit levels the photo has already
+supplied — the wall's own reference colour and the face's own lit level — rather than
+against a second, larger blur. A blur-versus-blur comparison silently misses any shadow
+bigger than the blur, which is exactly the case that matters: a cast shadow across the
+wall behind the head is enormous.
+
+Three things in it exist because the obvious version produced a visible artefact:
+
+- **Level, not just hue, separates shadow from dark objects.** The first version gated
+  on chromaticity alone and lifted hair from 27 to 44, because brown hair and skin can
+  share a chromaticity almost exactly. Each surface now also requires the pixel to be
+  within a ratio of *its own* lit level. Both references are per-photo, so nothing
+  assumes a skin tone.
+- **The local level is a masked blur, not a plain one.** A plain blur lets dark hair drag
+  down the estimate of the wall beside it, so the wall next to the head gets lifted
+  hardest and the subject wears a white halo. Blurring the weighted values and the
+  weights together and dividing keeps each surface's estimate built from its own pixels.
+- **Lift is capped at the lit reference, and re-capped after feathering.** Magnitude comes
+  from the neighbourhood so a dark feature is never lifted on its own account, but a
+  pixel already at full brightness inside a shadow's soft edge would still take the
+  neighbourhood's lift and blow past white — a halo again, drawn around the shadow
+  instead of the head. The ceiling falls to zero as a pixel approaches its lit level, so
+  clamping against it cannot introduce an edge of its own.
+
+It runs **before** the tone curve. It is measured from the original pixels, so applying
+it after the curve has already lifted them counts the same correction twice — that
+combination put the shadowed wall at 255 against a lit wall of 226. The curve's own
+shadow term and the illumination flatten are also damped when shadows are on, since all
+three do overlapping work.
+
+On a frame with a cast shadow on the wall and a side-lit face: wall shadow 90 levels
+below the lit wall → 3, face shadow 40 → 2, with hair (27) and a dark shirt (41)
+unchanged to the level and brow-to-cheek contrast preserved.
+
 **Resolution split.** The preview runs the passes at `PREVIEW_EDGE` (1500) so the
 controls stay responsive; the export runs them once more at full resolution, clipped
 to the crop square since nothing outside it is ever read back. Same parameters both
@@ -127,7 +162,7 @@ attribute. Sandboxed previews (Claude artifacts, CodePen, etc.) don't, so the
 camera tab fails there and falls back with an explanatory message. On Pages it
 works normally.
 
-**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v7`.
+**Bump `CACHE` in `sw.js` after any change.** Currently `passport-framer-v8`.
 
 The app shell is served **network-first**, everything else cache-first. It was all
 cache-first, which made every redeploy land one launch late — the phone served the
@@ -176,6 +211,11 @@ and would otherwise ship.
 - White mode will whiten a genuinely white shirt if the wall reaches it from the frame
   edge. The subject guard is the only thing standing in the way and it is deliberately
   permissive. Clean is unaffected in practice, since it only blends part way.
+- Strong shadow lift compresses brow-to-cheek contrast somewhat (0.82 → 0.76 on the
+  test frame). Soft does not. Worth knowing before assuming Strong is strictly better.
+- A faint trace of a large cast shadow survives Strong on a perfectly flat wall. It is
+  well under the level that reads as a shadow, and any of the background settings
+  removes it outright, but it is there.
 - No EXIF orientation handling beyond what the browser applies. Fine so far
   because display and crop share one canvas, but worth a look if a photo ever
   comes out sideways.
